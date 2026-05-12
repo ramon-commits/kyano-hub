@@ -213,6 +213,9 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
 END;
 
 -- Indexen
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_external_per_channel
+  ON messages(channel_id, external_id)
+  WHERE external_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
 CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(contact_id);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id);

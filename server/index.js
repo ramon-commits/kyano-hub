@@ -1,13 +1,20 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
+// Laad .env uit de project root VOOR andere imports (encryption.js etc lezen process.env)
+import './env.js';
+
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+import express from 'express';
+import cors from 'cors';
+
 import db from './db/init.js';
 import { seed } from './db/seed.js';
 import { startSnoozeCron } from './services/snooze-cron.js';
+import { startGmailPoller } from './services/gmail-poller.js';
+import { startPurgeCron } from './services/purge-cron.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 
 import messagesRouter from './routes/messages.js';
@@ -19,7 +26,6 @@ import calendarRouter from './routes/calendar.js';
 import syncRouter from './routes/sync.js';
 import aiRouter from './routes/ai.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT) || 3001;
 
 const app = express();
@@ -63,6 +69,8 @@ app.use(errorHandler);
 // Boot
 seed();
 startSnoozeCron();
+startGmailPoller();
+startPurgeCron();
 
 app.listen(PORT, () => {
   console.log(`🚀 Kyano Comm Hub draait op http://localhost:${PORT}`);

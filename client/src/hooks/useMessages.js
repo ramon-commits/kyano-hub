@@ -19,6 +19,53 @@ export function useMessage(id) {
   });
 }
 
+export function useThread(messageId) {
+  return useQuery({
+    queryKey: ['thread', messageId],
+    queryFn: () => api.get(`/messages/${messageId}/thread`),
+    enabled: !!messageId,
+  });
+}
+
+export function useReplyMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body_text, body_html, cc, bcc }) =>
+      api.post(`/messages/${id}/reply`, { body_text, body_html, cc, bcc }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['thread'] });
+      qc.invalidateQueries({ queryKey: ['message', vars.id] });
+    },
+  });
+}
+
+export function useSyncAll() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('/sync/all'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      qc.invalidateQueries({ queryKey: ['channels'] });
+      qc.invalidateQueries({ queryKey: ['auth-status'] });
+    },
+  });
+}
+
+export function useSyncChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (channelId) => api.post(`/sync/${channelId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      qc.invalidateQueries({ queryKey: ['channels'] });
+      qc.invalidateQueries({ queryKey: ['auth-status'] });
+    },
+  });
+}
+
 export function useSnoozeMessage() {
   const qc = useQueryClient();
   return useMutation({

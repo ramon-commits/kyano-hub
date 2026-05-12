@@ -3,12 +3,26 @@ import { useChannels } from '../../hooks/useChannels.js';
 import { NAV_ITEMS } from '../../lib/constants.js';
 import { cn } from '../../lib/utils.js';
 
-const CHANNEL_DOTS = {
-  email: 'bg-red-500',
-  whatsapp: 'bg-green-500',
-  instagram: 'bg-pink-500',
-  linkedin: 'bg-blue-500',
-};
+function dotFor(channel) {
+  // Email channels: groen=connected+ok, geel=error, rood=niet verbonden
+  if (channel.type === 'email') {
+    if (channel.has_error) return 'bg-amber-400';
+    if (channel.is_connected) return 'bg-green-500';
+    return 'bg-red-500';
+  }
+  // WhatsApp: groen als active (real sync komt stap 9)
+  if (channel.type === 'whatsapp') return 'bg-green-500';
+  if (channel.type === 'instagram') return 'bg-pink-500';
+  if (channel.type === 'linkedin') return 'bg-blue-500';
+  return 'bg-gray-500';
+}
+
+function dotTitle(channel) {
+  if (channel.type !== 'email') return `${channel.label} (placeholder)`;
+  if (channel.has_error) return `${channel.label} — ${channel.error_message || 'Herconnectie nodig'}`;
+  if (channel.is_connected) return `${channel.label} — verbonden`;
+  return `${channel.label} — niet verbonden`;
+}
 
 export default function Sidebar({ active, onSelect }) {
   const { data: stats } = useStats();
@@ -74,13 +88,13 @@ export default function Sidebar({ active, onSelect }) {
             <div
               key={c.id}
               className="flex items-center gap-2.5 rounded-md px-3 py-1.5 text-xs hover:bg-white/5"
-              title={c.label}
+              title={dotTitle(c)}
             >
               <span
                 className={cn(
                   'h-2 w-2 rounded-full',
-                  CHANNEL_DOTS[c.type] || 'bg-gray-500',
-                  c.is_connected || c.type === 'whatsapp' ? '' : 'opacity-40',
+                  dotFor(c),
+                  c.type === 'email' && !c.is_connected ? 'opacity-50' : '',
                 )}
               />
               <span className="flex-1 truncate">{c.label}</span>

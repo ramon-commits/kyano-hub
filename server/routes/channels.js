@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db/init.js';
 import { isConnected } from '../services/gmail-oauth.js';
+import { getPollerState } from '../services/gmail-poller.js';
 
 const router = Router();
 
@@ -9,20 +10,29 @@ router.get('/', (_req, res) => {
     SELECT
       c.*,
       (SELECT COUNT(*) FROM messages WHERE channel_id = c.id AND status = 'open') AS open_count,
-      (SELECT last_sync_at FROM sync_state WHERE channel_id = c.id) AS last_sync_at
+      (SELECT COUNT(*) FROM messages WHERE channel_id = c.id) AS message_count,
+      (SELECT last_sync_at FROM sync_state WHERE channel_id = c.id) AS last_sync_at,
+      (SELECT last_history_id FROM sync_state WHERE channel_id = c.id) AS last_history_id
     FROM channels c
     ORDER BY c.type, c.label
   `).all();
 
-  const enriched = channels.map((c) => ({
-    ...c,
-    is_connected: c.type === 'email' ? isConnected(c.id) : false,
-  }));
+  const enriched = channels.map((c) => {
+    const connected = c.type === 'email' ? isConnected(c.id) : false;
+    const poll = c.type === 'email' ? getPollerState(c.id) : { has_error: false, error_message: null };
+    return {
+      ...c,
+      is_connected: connected,
+      has_error: !!poll.has_error,
+      error_message: poll.error_message || null,
+      poller_last_run_at: poll.last_run_at || null,
+    };
+  });
   res.json({ channels: enriched });
 });
 
 router.patch('/:id', (req, res) => {
-  const allowed = ['label', 'is_active'];
+  const allowed = ['label', 'is_active', 'config_json'];
   const sets = [];
   const params = { id: req.params.id };
   for (const k of allowed) {

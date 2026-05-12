@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
+import { sendReply, sendNew } from '../services/gmail-send.js';
+import { matchContact } from '../services/contact-matcher.js';
 
 const router = Router();
 
@@ -72,6 +74,139 @@ router.get('/:id', (req, res) => {
   const row = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Message not found' });
   res.json(row);
+});
+
+// GET /api/messages/:id/thread — alle berichten in dezelfde thread (lokaal uit DB)
+router.get('/:id/thread', (req, res) => {
+  const m = db.prepare('SELECT thread_id FROM messages WHERE id = ?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Message not found' });
+  if (!m.thread_id) {
+    const single = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
+    return res.json({ messages: [single], thread_id: null });
+  }
+  const messages = db.prepare(`${MESSAGE_SELECT} WHERE m.thread_id = ? ORDER BY m.received_at ASC`).all(m.thread_id);
+  res.json({ messages, thread_id: m.thread_id });
+});
+
+// POST /api/messages/:id/reply — verstuur een reply via Gmail API
+router.post('/:id/reply', async (req, res, next) => {
+  try {
+    const original = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
+    if (!original) return res.status(404).json({ error: 'Message not found' });
+
+    const { body_html, body_text, cc, bcc, body } = req.body || {};
+    const plainBody = body_text ?? body ?? '';
+    const htmlBody = body_html ?? (plainBody ? `<div>${plainBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</div>` : '');
+
+    if (!plainBody && !htmlBody) return res.status(400).json({ error: 'body is required' });
+
+    if (original.channel_type !== 'email') {
+      return res.status(400).json({ error: 'Replies via API only supported for email channels (stap 3). WhatsApp komt in stap 9.' });
+    }
+
+    const to = original.contact_email;
+    if (!to) return res.status(400).json({ error: 'No contact email to reply to' });
+
+    // Threading headers
+    const inReplyTo = original.in_reply_to || null;
+    // References: voor stap 3 simpel — gebruik in_reply_to als chain
+    const references = inReplyTo;
+
+    const result = await sendReply(original.channel_id, {
+      threadId: original.thread_id,
+      to,
+      cc: cc || null,
+      bcc: bcc || null,
+      subject: original.subject || '(geen onderwerp)',
+      bodyHtml: htmlBody,
+      bodyText: plainBody,
+      inReplyTo,
+      references,
+    });
+
+    // Sla het verzonden bericht lokaal op (status='archived' voor outbound)
+    const localId = uuid();
+    const snippet = (plainBody || htmlBody.replace(/<[^>]+>/g, '')).trim().slice(0, 200);
+
+    db.prepare(`
+      INSERT OR IGNORE INTO messages (
+        id, external_id, channel_id, contact_id, direction, subject, snippet,
+        body_html, body_text, deep_link, thread_id, in_reply_to,
+        status, priority, received_at
+      ) VALUES (
+        @id, @external_id, @channel_id, @contact_id, 'outbound', @subject, @snippet,
+        @body_html, @body_text, @deep_link, @thread_id, @in_reply_to,
+        'archived', 'medium', @received_at
+      )
+    `).run({
+      id: localId,
+      external_id: result.messageId,
+      channel_id: original.channel_id,
+      contact_id: original.contact_id,
+      subject: original.subject?.startsWith('Re:') ? original.subject : `Re: ${original.subject || '(geen onderwerp)'}`,
+      snippet,
+      body_html: htmlBody,
+      body_text: plainBody,
+      deep_link: original.deep_link,
+      thread_id: result.threadId || original.thread_id,
+      in_reply_to: original.external_id || null,
+      received_at: new Date().toISOString(),
+    });
+
+    // Interaction log
+    try {
+      db.prepare(`
+        INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, outcome)
+        VALUES (?, ?, ?, 'replied', 'email', 'sent')
+      `).run(uuid(), localId, original.contact_id);
+    } catch (e) { console.error('log fail:', e.message); }
+
+    res.json({ ok: true, message_id: localId, gmail_message_id: result.messageId, thread_id: result.threadId, from: result.fromEmail });
+  } catch (e) { next(e); }
+});
+
+// POST /api/messages/compose — nieuw bericht (geen reply)
+router.post('/compose', async (req, res, next) => {
+  try {
+    const { channel_id, to, cc, bcc, subject, body_html, body_text } = req.body || {};
+    if (!channel_id || !to || !(body_html || body_text)) {
+      return res.status(400).json({ error: 'channel_id, to en body zijn verplicht' });
+    }
+
+    const channel = db.prepare('SELECT * FROM channels WHERE id = ? AND type = ?').get(channel_id, 'email');
+    if (!channel) return res.status(404).json({ error: 'Email channel not found' });
+
+    const result = await sendNew(channel_id, {
+      to,
+      cc: cc || null,
+      bcc: bcc || null,
+      subject: subject || '(geen onderwerp)',
+      bodyHtml: body_html || null,
+      bodyText: body_text || null,
+    });
+
+    // Match contact en sla lokaal op
+    const contact = matchContact({ email: to.split('<').pop().replace('>', '').trim(), name: null, phone: null });
+
+    const localId = uuid();
+    const snippet = (body_text || body_html?.replace(/<[^>]+>/g, '') || '').trim().slice(0, 200);
+
+    db.prepare(`
+      INSERT OR IGNORE INTO messages (
+        id, external_id, channel_id, contact_id, direction, subject, snippet,
+        body_html, body_text, thread_id, status, priority, received_at
+      ) VALUES (
+        @id, @external_id, @channel_id, @contact_id, 'outbound', @subject, @snippet,
+        @body_html, @body_text, @thread_id, 'archived', 'medium', @received_at
+      )
+    `).run({
+      id: localId, external_id: result.messageId, channel_id, contact_id: contact?.id || null,
+      subject: subject || '(geen onderwerp)', snippet, body_html, body_text,
+      thread_id: result.threadId, received_at: new Date().toISOString(),
+    });
+
+    res.json({ ok: true, message_id: localId, gmail_message_id: result.messageId, thread_id: result.threadId, from: result.fromEmail });
+  } catch (e) { next(e); }
 });
 
 // PATCH /api/messages/:id/snooze

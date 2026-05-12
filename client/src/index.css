@@ -93,3 +93,17 @@ button {
 .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
 .scrollbar-thin::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* Email body container: contain wide images/tables, preserve email styling */
+.email-body { font-size: 14px; line-height: 1.55; }
+.email-body img { max-width: 100%; height: auto; border-radius: 4px; }
+.email-body table { max-width: 100%; }
+.email-body blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #6b7280;
+}
+.email-body a { color: #2563eb; text-decoration: underline; word-break: break-all; }
+.email-body p { margin: 0 0 8px; }
+.email-body pre { white-space: pre-wrap; word-break: break-word; background: #f3f4f6; padding: 8px; border-radius: 4px; font-size: 12px; }

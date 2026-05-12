@@ -1,28 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 
-const ACCOUNTS = [
-  { id: 'ramon@endlessminds.nl', label: 'ramon@endlessminds.nl' },
-  { id: 'ramon@lifeaidbevco.eu', label: 'ramon@lifeaidbevco.eu' },
-  { id: 'dach@lifeaidbevco.eu', label: 'dach@lifeaidbevco.eu' },
-  { id: 'brugman.ramon@gmail.com', label: 'brugman.ramon@gmail.com' },
-];
-
-export default function ReplyComposer({ channelType, defaultAccount, onSend, onCopy, onAI }) {
+export default function ReplyComposer({ channelType, defaultAccount, sending, onSend, onCopy, onAI }) {
   const [text, setText] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [cc, setCc] = useState('');
   const [bcc, setBcc] = useState('');
-  const [from, setFrom] = useState(defaultAccount || ACCOUNTS[0].id);
   const ref = useRef(null);
 
+  // Reset velden bij wisselen bericht
   useEffect(() => {
-    setFrom(defaultAccount || ACCOUNTS[0].id);
+    setText('');
+    setCc('');
+    setBcc('');
+    setShowCcBcc(false);
   }, [defaultAccount]);
 
-  const handleSend = () => {
-    if (!text.trim()) return;
-    onSend?.({ text, from, cc, bcc });
+  const handleSend = async () => {
+    if (!text.trim() || sending) return;
+    const ok = await onSend?.({ text, cc, bcc });
+    if (ok) {
+      setText('');
+      setCc('');
+      setBcc('');
+    }
   };
+
   const handleCopy = async () => {
     if (!text.trim()) return;
     try {
@@ -40,15 +42,9 @@ export default function ReplyComposer({ channelType, defaultAccount, onSend, onC
       {isEmail ? (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-gray-500">Van:</span>
-          <select
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:border-blue-500"
-          >
-            {ACCOUNTS.map((a) => (
-              <option key={a.id} value={a.id}>{a.label}</option>
-            ))}
-          </select>
+          <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-900">
+            {defaultAccount || 'Onbekend account'}
+          </span>
           <button
             onClick={() => setShowCcBcc((v) => !v)}
             className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-700"
@@ -64,7 +60,7 @@ export default function ReplyComposer({ channelType, defaultAccount, onSend, onC
             type="text"
             value={cc}
             onChange={(e) => setCc(e.target.value)}
-            placeholder="CC: email@example.com"
+            placeholder="CC: email@example.com (comma-separated voor meerdere)"
             className="w-full rounded-md border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
           <input
@@ -81,29 +77,44 @@ export default function ReplyComposer({ channelType, defaultAccount, onSend, onC
         ref={ref}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Typ je antwoord…"
+        placeholder={isEmail ? "Typ je antwoord… (Cmd/Ctrl+Enter om te versturen)" : 'Typ je bericht…'}
         rows={4}
-        className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed outline-none transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+        disabled={sending}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            handleSend();
+          }
+        }}
+        className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed outline-none transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60"
       />
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           onClick={handleSend}
-          disabled={!text.trim()}
+          disabled={!text.trim() || sending}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          📤 Verstuur
+          {sending ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              Verzenden…
+            </span>
+          ) : (
+            <>📤 Verstuur</>
+          )}
         </button>
         <button
           onClick={handleCopy}
-          disabled={!text.trim()}
+          disabled={!text.trim() || sending}
           className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           📋 Kopieer
         </button>
         <button
           onClick={onAI}
-          className="rounded-md border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-100"
+          disabled={sending}
+          className="rounded-md border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-100 disabled:opacity-50"
         >
           🤖 AI varianten
         </button>

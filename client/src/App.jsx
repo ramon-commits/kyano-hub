@@ -136,15 +136,6 @@ export default function App() {
     }
   };
 
-  const onCopy = (ok) => {
-    if (ok) toast.success('Tekst staat op je klembord', '📋 Gekopieerd');
-    else toast.error('Kon niet kopiëren');
-  };
-
-  const onSendPlaceholder = () => {
-    toast.info('Verzenden wordt gebouwd in stap 3 (Gmail) en stap 9 (WhatsApp)', '📤 Nog niet beschikbaar');
-  };
-
   const onAIPlaceholder = () => {
     toast.info('AI varianten worden gebouwd in stap 11', '🤖 Komt eraan');
   };
@@ -191,8 +182,6 @@ export default function App() {
           onSchedule={handleSchedule}
           onUrgent={onUrgent}
           onArchive={onArchive}
-          onSend={onSendPlaceholder}
-          onCopy={onCopy}
           onAI={onAIPlaceholder}
         />
       );

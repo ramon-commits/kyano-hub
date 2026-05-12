@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useMessages } from '../../hooks/useMessages.js';
+import { useMessages, useSyncAll } from '../../hooks/useMessages.js';
 import { useStats } from '../../hooks/useStats.js';
+import { useToast } from '../../hooks/useToast.jsx';
 import MessageRow from './MessageRow.jsx';
 import MessageFilters from './MessageFilters.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
@@ -36,8 +37,28 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
 
   const { data, isLoading } = useMessages(params);
   const { data: stats } = useStats();
+  const syncAll = useSyncAll();
+  const toast = useToast();
 
   const messages = data?.messages || [];
+
+  const handleSync = async () => {
+    try {
+      const r = await syncAll.mutateAsync();
+      const total = r.total_new ?? 0;
+      if (total === 0) {
+        toast.info('Geen nieuwe berichten gevonden');
+      } else {
+        toast.success(`${total} nieuwe bericht${total === 1 ? '' : 'en'}`, '📧 Sync klaar');
+      }
+      const errors = (r.results || []).filter((x) => !x.ok);
+      if (errors.length) {
+        toast.warning(`${errors.length} kanaal/kanalen gaf foutmelding — check Instellingen`);
+      }
+    } catch (e) {
+      toast.error(e.message || 'Sync mislukt');
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -49,6 +70,14 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
               {stats ? `${stats.open_count} berichten wachten op actie` : 'Laden…'}
             </p>
           </div>
+          <button
+            onClick={handleSync}
+            disabled={syncAll.isPending}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className={syncAll.isPending ? 'inline-block animate-spin' : ''}>🔄</span>
+            {syncAll.isPending ? 'Synchroniseren…' : 'Nieuwe check'}
+          </button>
         </div>
 
         <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">

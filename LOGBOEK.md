@@ -185,3 +185,151 @@ Stap 2: Inbox-UI met message-lijst, message detail panel, quick actions (snooze/
 ### Volgende stap
 
 Stap 3: Echte Gmail synchronisatie. Token gebruiken (al verbonden via OAuth), Gmail API History + Messages list ophalen, sanitizen, opslaan in `messages` table met contact_matcher.
+
+---
+
+## Stap 3 — Gmail Live: OAuth + encryptie + sync + lezen + versturen
+
+**Datum:** 2026-05-12
+**Status:** ✅ Code af, klaar voor user OAuth + live test
+
+### Boardroom-fixes (eerst)
+
+**FIX 1 — AES-256-GCM encryptie van OAuth tokens**
+- Nieuwe `services/encryption.js` met `encrypt(text) → JSON({encrypted,iv,tag})` en `decrypt(payload)` op `aes-256-gcm`
+- 32-byte key gelezen uit `process.env.ENCRYPTION_KEY` (32 hex bytes); auto-generated en in .env weggeschreven als ontbrekend
+- `gmail-oauth.handleCallback`: access + refresh tokens worden encrypted opgeslagen
+- `gmail-oauth.getClient`: decrypt voor gebruik; auto-refresh listener encrypt nieuwe tokens
+- Backwards-compatible: oude plaintext tokens (van vóór encryptie) worden alsnog gelezen via fallback
+
+**FIX 2 — DOMPurify hardening in EmailThread**
+- `DOMPurify.addHook('afterSanitizeAttributes')` forceert `target="_blank" rel="noopener noreferrer"` op alle `<a>` tags
+- `FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form']`
+- `FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']`
+- Defensive: post-render `useEffect` re-applyt target/rel
+- `.email-body` CSS: max-width images, blockquotes, link color, table containment
+
+**FIX 3 — Nette OAuth callback error pagina's**
+- `renderPage()` helper rendert Endless Minds-styled HTML cards
+- Specifieke meldingen: `access_denied`, `invalid_request`, `invalid_grant` (Code verlopen), `already.*connected`, generieke fallback
+- "Probeer opnieuw" knop → `/api/auth/gmail/connect/:channelId` + "Naar dashboard" link
+- Auto-redirect na 5 seconden naar `localhost:5173`
+- Connect-route doet 302 redirect ipv JSON (behalve voor `Accept: application/json`)
+
+### Server: Gmail integratie
+
+**`services/gmail-sync.js`** — kern van de stap
+- Initial sync (eerste keer, geen historyId): `messages.list` (max 100) + `messages.get full` per bericht
+- Incremental sync: `history.list` sinds opgeslagen `historyId`, filter op `messagesAdded`, `labelAdded`, `labelRemoved`
+- Fallback bij 404/expired history → terug naar initial sync
+- Body extractie: recursieve `findPart(parts, mimeType)` voor text/html + text/plain, base64url decode, 500KB cap met "afgekapt" marker
+- Header parsing: `From/To/Subject/Message-ID/In-Reply-To`, RFC 2822 address parser
+- Direction: vergelijk `from.email` met `channel.account_email` → `outbound` krijgt status `archived`
+- Contact matching: voor inbound de afzender; voor outbound de eerste ontvanger; via `contact-matcher.matchContact`
+- Deep-links: `https://mail.google.com/mail/u/{idx}/#inbox/{messageId}`, idx uit `channels.config_json.gmail_account_index` of `DEFAULT_INDEX`
+- Dedup via nieuwe unique index `idx_messages_external_per_channel (channel_id, external_id) WHERE external_id IS NOT NULL`
+- Bestaande berichten: update body/snippet/subject/thread (geen overschrijven van status/priority)
+- **Auto-wake**: bij nieuw inbound bericht — alle snoozed/waiting berichten van dezelfde `contact_id` → status `open`, snoozed_until null, log "⚡ Woke N snoozed/waiting message(s)…"
+- `syncAll()` itereert sequentieel over connected channels, 401/invalid_grant detectie
+
+**`services/gmail-send.js`** — sendReply / sendNew / createDraft
+- RFC 2822 builder: `Date/From/To/Cc/Bcc/Subject/MIME-Version/In-Reply-To/References` headers
+- Subject met `Re:` prefix bij replies (idempotent)
+- multipart/alternative met text/plain + text/html parts
+- UTF-8 subject via RFC 2047 encoded-word voor non-ASCII (Sehr geehrte etc)
+- base64url encode → `users.messages.send` met optionele `threadId` voor threading
+- `getAccountFrom(client)` haalt `userinfo.get()` voor echte From naam+email
+
+**`services/gmail-poller.js`** — node-cron `*/2 * * * *`
+- Sequentieel per connected channel (rate-limit safe)
+- `isRunning` lock voorkomt overlap als sync >2 min duurt
+- POLL_STATE map per channel: `has_error / error_message / last_run_at`
+- 401/invalid_grant → markeert "Herconnectie nodig"
+- Initial trigger na 5s (zodat eerste run direct start na boot)
+
+**`services/purge-cron.js`** — `0 3 * * *`
+- `body_html = NULL, body_text = NULL WHERE datetime(received_at) < datetime('now', '-90 days')`
+- Metadata (subject/snippet/contact/datum) blijft
+- Log changes count
+
+### Server: routes uitgebreid
+
+- `GET /api/messages/:id/thread` — alle berichten met dezelfde `thread_id` lokaal uit DB (geen Gmail API call)
+- `POST /api/messages/:id/reply` — via `gmail-send.sendReply` + INSERT outbound + interaction_log "replied" + return `from email`
+- `POST /api/messages/compose` — `gmail-send.sendNew` + contact match + INSERT outbound
+- `POST /api/sync/:channelId` — echte sync via `syncChannel`, 400 voor "not connected", 401 voor expired, 500 anders; alle met `needs_reconnect` flag
+- `POST /api/sync/all` — echt + return per-channel results (route-volgorde fix: `/all` vóór `/:channelId` om collision te voorkomen)
+- `GET /api/sync/status` — verrijkt met poller state (`has_error`, `error_message`, `poller_last_run_at`)
+- `GET /api/auth/status` — verrijkt: `last_sync_at`, `has_history`, `message_count`, `open_count`, `has_error`, `error_message`
+- `GET /api/auth/gmail/connect/:channelId` — 302 REDIRECT naar Google (Accept: application/json → blijft JSON)
+- `GET /api/channels` — `has_error`, `error_message`, `poller_last_run_at` per kanaal
+
+### Server: bootstrap
+
+- `server/env.js` — laadt `.env` uit project-root (één niveau boven `/server`), geïmporteerd vóór alle andere modules zodat `process.env.ENCRYPTION_KEY` beschikbaar is wanneer `encryption.js` evalueert
+- `index.js`: `startGmailPoller()` + `startPurgeCron()` toegevoegd
+
+### Frontend updates
+
+- `hooks/useMessages.js`: `useThread(messageId)`, `useReplyMessage()`, `useSyncAll()`, `useSyncChannel()`
+- `ConversationView.jsx`: fetcht `/messages/:id/thread`, geeft alle berichten door aan `EmailThread`, eigen `handleSend` met loading + 401 detectie + toast
+- `EmailThread.jsx`: rendert array van berichten, nieuwste expanded, outbound met blauwe rand + "verzonden" badge; DOMPurify hardened
+- `ReplyComposer.jsx`: echte send via `useReplyMessage`, spinner tijdens verzending, ⌘/Ctrl+Enter shortcut, "Van" toont kanaal-account, CC/BCC velden meegestuurd
+- `ChannelsSettings.jsx`: `connect()` opent OAuth in popup (server doet 302), polled na 3s, `doSync` toast met inserted count, "Herconnectie nodig" badge + amber knop bij `has_error`, ConfirmModal voor ontkoppelen
+- `Sidebar.jsx`: kanaal-dots tonen realtime status (groen=verbonden/ok, amber=error, rood=niet verbonden), title attribute met error_message
+- `InboxView.jsx`: "🔄 Nieuwe check" knop rechtsboven, spinning icon tijdens sync, toast met aantal nieuwe berichten + error count
+
+### Schema migration
+
+Toegevoegd aan `schema.sql`:
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_external_per_channel
+  ON messages(channel_id, external_id)
+  WHERE external_id IS NOT NULL;
+```
+
+### Getest
+
+- ✅ `npm run build` → 121 modules, 289 kB JS (gzip 88 kB), geen errors
+- ✅ Encryption round-trip: `encrypt(token) → JSON → decrypt → match`
+- ✅ Plaintext fallback: legacy unencrypted tokens worden alsnog gelezen
+- ✅ Server startup: encryption key auto-gegenereerd bij ontbreken, daarna stabiel
+- ✅ `/auth/gmail/callback` zonder code → nette "Onvolledige callback" pagina
+- ✅ `/auth/gmail/callback?error=access_denied` → "Geen toegang gegeven"
+- ✅ `/auth/gmail/callback?code=fake` → "Code verlopen" (invalid_grant)
+- ✅ `/api/auth/gmail/connect/gmail-1` → 302 naar Google consent URL
+- ✅ `/api/sync/gmail-1` (not connected) → 400 + needs_reconnect:true
+- ✅ `/api/sync/all` (geen connected accounts) → 200 met `accounts_synced:0`
+- ✅ `/api/sync/wa-1` → placeholder met "stap 9" message
+- ✅ `/api/messages/m1/thread` → bevat alle berichten met dezelfde thread_id
+- ✅ `/api/messages/m1/reply` zonder body → 400, met body maar geen OAuth → 500 met juiste error
+- ✅ Gmail poller log: "📧 Poll skipped — no connected email channels" wanneer geen tokens
+- ✅ Snooze cron en purge cron starten op boot
+
+### Bugs gevonden & gefixt
+
+1. **dotenv las `.env` uit cwd (`/server`) ipv project-root** — encryption.js triggerde "ENCRYPTION_KEY ontbrak" zelfs als de key in .env stond. Fix: `server/env.js` met expliciete `path: resolve(__dirname, '../.env')` als eerste import in `index.js`.
+2. **Route order in `sync.js`** — `/:channelId` matchte `/all` voordat de specifieke `/all` route was geregistreerd. Fix: `/all` vóór `/:channelId` plaatsen.
+3. **Multipart route flow voor sync**: niet-email kanalen kwamen vroeger via dezelfde route. Fix: type-check binnen `/:channelId` met placeholder respons voor `wa-*`.
+
+### Niet getest (live OAuth nodig)
+
+De checklist items die echte Google consent vereisen kunnen niet programmatisch worden gevalideerd:
+- Klik "Verbinden" → consent screen → callback flow
+- Initiële sync 100 berichten
+- Poller iteratie met nieuwe inkomende mail
+- Auto-wake snoozed bericht door real inbound reply
+- Echte reply via Gmail API → komt aan bij ontvanger in juiste thread
+
+Deze flows zijn klaar voor Ramon om handmatig te testen via Instellingen → Kanalen → Verbinden.
+
+### Veiligheid
+
+- Tokens encrypted at rest met AES-256-GCM (auth tag voorkomt tampering)
+- DOMPurify met afterSanitizeAttributes hook + FORBID_TAGS/ATTR (geen XSS via email body)
+- OAuth redirect URI hard-coded op `localhost:3001`
+- Refresh tokens worden niet gelogd; access tokens niet in logs
+
+### Volgende stap
+
+Stap 4: Productie hardening — token rotation alerts, OAuth scope minimalisatie audit, structured logging, error tracking. Of stap 5: AI-assisted replies (Claude integratie).

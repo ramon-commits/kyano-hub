@@ -1,4 +1,4 @@
-import { useMessage } from '../../hooks/useMessages.js';
+import { useMessage, useThread, useReplyMessage } from '../../hooks/useMessages.js';
 import EmailThread from './EmailThread.jsx';
 import ChatThread from './ChatThread.jsx';
 import ReplyComposer from './ReplyComposer.jsx';
@@ -7,6 +7,7 @@ import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import ChannelBadge from '../shared/ChannelBadge.jsx';
 import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Avatar from '../shared/Avatar.jsx';
+import { useToast } from '../../hooks/useToast.jsx';
 
 export default function ConversationView({
   messageId,
@@ -16,11 +17,12 @@ export default function ConversationView({
   onSchedule,
   onUrgent,
   onArchive,
-  onSend,
-  onCopy,
   onAI,
 }) {
   const { data: m, isLoading } = useMessage(messageId);
+  const { data: thread } = useThread(messageId);
+  const replyMut = useReplyMessage();
+  const toast = useToast();
 
   if (isLoading || !m) {
     return (
@@ -31,6 +33,34 @@ export default function ConversationView({
   }
 
   const isEmail = m.channel_type === 'email';
+  const threadMessages = thread?.messages || [m];
+
+  const handleSend = async ({ text, cc, bcc }) => {
+    try {
+      const result = await replyMut.mutateAsync({
+        id: messageId,
+        body_text: text,
+        cc: cc || null,
+        bcc: bcc || null,
+      });
+      toast.success(`Verzonden via ${result.from || m.channel_account || m.channel_label}`, '📤 Verstuurd');
+      return true;
+    } catch (e) {
+      if (e.status === 401 || e.data?.needs_reconnect) {
+        toast.error('Account moet opnieuw verbonden worden (token verlopen)', '🔐 Herconnectie nodig');
+      } else if (e.status === 400) {
+        toast.error(e.message);
+      } else {
+        toast.error(e.message || 'Verzenden mislukt');
+      }
+      return false;
+    }
+  };
+
+  const handleCopy = (ok) => {
+    if (ok) toast.success('Tekst staat op je klembord', '📋 Gekopieerd');
+    else toast.error('Kon niet kopiëren');
+  };
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -50,6 +80,11 @@ export default function ConversationView({
             </h2>
             <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" />
             {m.priority === 'high' ? <PriorityBadge priority="high" size="xs" /> : null}
+            {threadMessages.length > 1 ? (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">
+                {threadMessages.length} berichten
+              </span>
+            ) : null}
           </div>
           {isEmail && m.subject ? (
             <div className="mt-0.5 truncate text-sm text-gray-600">{m.subject}</div>
@@ -63,14 +98,15 @@ export default function ConversationView({
       </header>
 
       <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
-        {isEmail ? <EmailThread message={m} /> : <ChatThread message={m} />}
+        {isEmail ? <EmailThread message={m} threadMessages={threadMessages} /> : <ChatThread message={m} />}
       </div>
 
       <ReplyComposer
         channelType={m.channel_type}
         defaultAccount={m.channel_account}
-        onSend={(payload) => onSend?.(m, payload)}
-        onCopy={(ok) => onCopy?.(ok)}
+        sending={replyMut.isPending}
+        onSend={handleSend}
+        onCopy={handleCopy}
         onAI={() => onAI?.(m)}
       />
 
