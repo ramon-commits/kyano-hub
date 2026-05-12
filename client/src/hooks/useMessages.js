@@ -51,3 +51,43 @@ export function useReopenMessage() {
     },
   });
 }
+
+export function useWaitingMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => api.patch(`/messages/${id}/waiting`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
+export function usePriorityMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, priority }) => api.patch(`/messages/${id}/priority`, { priority }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
+export function useArchiveMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => api.delete(`/messages/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
+export function useContactMessages(contactId) {
+  return useQuery({
+    queryKey: ['contact-messages', contactId],
+    queryFn: () => api.get(`/contacts/${contactId}/messages`),
+    enabled: !!contactId,
+  });
+}

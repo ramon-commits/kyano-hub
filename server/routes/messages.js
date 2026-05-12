@@ -48,7 +48,7 @@ router.get('/', (req, res) => {
   if (priority) { where.push('m.priority = @priority'); params.priority = priority; }
 
   if (search) {
-    where.push(`(m.snippet LIKE @search OR m.subject LIKE @search OR c.name LIKE @search)`);
+    where.push(`(m.snippet LIKE @search OR m.subject LIKE @search OR c.name LIKE @search OR m.done_note LIKE @search OR m.body_text LIKE @search)`);
     params.search = `%${search}%`;
   }
 
@@ -108,6 +108,17 @@ router.patch('/:id/done', (req, res) => {
   if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
   logInteraction(req.params.id, 'done', note);
   res.json({ ok: true, id: req.params.id, status: 'done' });
+});
+
+// PATCH /api/messages/:id/waiting (wacht op reactie)
+router.patch('/:id/waiting', (req, res) => {
+  const result = db.prepare(`
+    UPDATE messages SET status = 'waiting', snoozed_until = NULL, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
+  logInteraction(req.params.id, 'snoozed');
+  res.json({ ok: true, id: req.params.id, status: 'waiting' });
 });
 
 // PATCH /api/messages/:id/reopen

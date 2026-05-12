@@ -66,8 +66,9 @@ router.get('/birthdays', (req, res) => {
   res.json({ birthdays: upcoming });
 });
 
-// GET /api/contacts/nudges
-router.get('/nudges', (_req, res) => {
+// GET /api/contacts/nudges?min_days=N (override per-contact threshold)
+router.get('/nudges', (req, res) => {
+  const override = req.query.min_days != null ? Math.max(0, parseInt(req.query.min_days)) : null;
   const rows = db.prepare(`
     SELECT
       c.*,
@@ -79,15 +80,17 @@ router.get('/nudges', (_req, res) => {
   `).all();
 
   const now = Date.now();
-  const due = rows.filter((c) => {
-    if (!c.last_message_at) return false;
+  const due = rows.map((c) => {
+    if (!c.last_message_at) return { ...c, days_since_last: null };
     const last = new Date(c.last_message_at).getTime();
-    const daysSince = Math.floor((now - last) / 86400000);
-    c.days_since_last = daysSince;
-    return daysSince >= c.remind_after_days;
+    return { ...c, days_since_last: Math.floor((now - last) / 86400000) };
+  }).filter((c) => {
+    if (c.days_since_last == null) return false;
+    const threshold = override != null ? override : c.remind_after_days;
+    return c.days_since_last >= threshold;
   }).sort((a, b) => b.days_since_last - a.days_since_last);
 
-  res.json({ nudges: due });
+  res.json({ nudges: due, threshold_override: override });
 });
 
 // GET /api/contacts/:id

@@ -95,3 +95,93 @@ Logboek van alle bouwsessies. Per stap: wat is gebouwd, wat getest, welke bugs g
 ### Volgende stap
 
 Stap 2: Inbox-UI met message-lijst, message detail panel, quick actions (snooze/done/reopen) gebonden aan de `useMessages` hooks die al bestaan.
+
+---
+
+## Stap 2 — Volledige UI (inbox, conversation, snooze/done, contacts, logboek, etc.)
+
+**Datum:** 2026-05-12
+**Status:** ✅ Voltooid
+
+### Gebouwd
+
+**Foundation**
+- `lib/utils.js` — `cn`, `debounce`, `timeAgo`, `formatDate`/`formatTime`/`formatDateTime`, `parseDateSafe` (SQLite datetime -> JS Date), `getDaysUntilBirthday`, `getDaysSinceContact`, `groupByDate` (vandaag/gisteren/deze_week/eerder), `tomorrowAt9` / `daysFromNowAt9` / `nextMondayAt9`, date input helpers
+- `lib/constants.js` — `CHANNEL_COLORS`, `PRIORITY_COLORS`, `STATUS_COLORS`, `SNOOZE_OPTIONS`, `DONE_CATEGORIES`, `NAV_ITEMS` (met keyboard shortcut keys)
+- `shared/Avatar.jsx` — 5 sizes, dynamic background color
+- `shared/Badge.jsx`, `shared/ChannelBadge.jsx`, `shared/PriorityBadge.jsx`, `shared/EmptyState.jsx`, `shared/LoadingSpinner.jsx`, `shared/Toast.jsx` (container met dismiss + auto-timeout)
+- `hooks/useToast.jsx` — Context-based toast met `success/error/info/warning` helpers, max 3 stacked, 3s auto-dismiss
+- `hooks/useKeyboard.js` — Generic keymap handler, skipt inputs (behalve Escape)
+
+**Modals**
+- `Modal.jsx` — Generic modal wrapper met backdrop blur, Escape-to-close, body scroll lock, fade-in animatie
+- `SnoozeModal.jsx` — 5 quick options (morgen 9u, overmorgen, +3d, volgende week, +30d) + "Tot ze reageren" (waiting) + custom datetime picker
+- `DoneModal.jsx` — 6 categorie chips + optional note textarea + autofocus
+- `ScheduleModal.jsx` — Titel (auto-prefill met contact naam), datum, tijd, duur (15/30/45/60min), calendar dropdown
+- `ConfirmModal.jsx` — Generic confirm/cancel met primary/danger variants
+
+**Inbox + Conversation**
+- `InboxView.jsx` — Header met 4 metric cards (Open/Snoozed/Vandaag/Urgent), filter chips (Alle/Email/WhatsApp) + debounced search, message list met empty state
+- `MessageRow.jsx` — Avatar + naam + ChannelBadge + PriorityBadge + subject + snippet + timeAgo, quick action knoppen verschijnen on hover, optionele wake-up/done info
+- `MessageFilters.jsx` — Channel filter pills + zoekbalk met debounce + extra slot
+- `ConversationView.jsx` — Header met back-knop + contact info + subject, switch tussen EmailThread en ChatThread, ReplyComposer + ThreadStatusBar onderaan
+- `EmailThread.jsx` — Inklapbare email items, DOMPurify sanitization van body_html, fallback naar body_text/snippet als plain text
+- `ChatThread.jsx` — Inbound bubbels links/grijs, auto-scroll naar onderaan, datum-divider
+- `ReplyComposer.jsx` — Textarea + Verstuur/Kopieer/AI knoppen, "Van" account dropdown voor email, CC/BCC toggle
+- `ThreadStatusBar.jsx` — Snooze/Afgehandeld/Plan/Urgent toggle/Archiveer knoppen
+
+**Snoozed + Logboek**
+- `SnoozedView.jsx` — Toont snoozed + waiting (gesorteerd op snoozed_until oplopend), per rij wake-up datum + reopen actie
+- `LogboekView.jsx` — Filters + zoek + categorie chips, gegroepeerd op Vandaag/Gisteren/Deze week/Eerder, done info badge per rij
+
+**Contacten**
+- `ContactenView.jsx` — Grid met zoek (debounced 300ms) + sorteer (naam/laatst gesproken/meeste berichten) + filter (open/14d stil), 3-koloms grid van kaarten
+- `ContactDetail.jsx` — Slide-in panel rechts (420px), avatar header + edit knop, action buttons (Afspraak/Mail/WA), info cards (laatste contact, verjaardag), contact info rows, conversatie historie scrollable
+- `ContactEditModal.jsx` — Form voor naam/bedrijf/email/telefoon/verjaardag/tags/notities met optimistic update via `useUpdateContact`
+
+**Verjaardagen, Nudges, Calendar, Projects, Settings**
+- `VerjaardagenView.jsx` — Lijst gesorteerd op days_until, dynamic labels (VANDAAG! / Morgen / Over Xd), quick actions per rij
+- `NudgesView.jsx` — Threshold toggle (iedereen/7d/14d/21d), severity colors per dagentelling, quick actions
+- `CalendarView.jsx` — Week-grid (8-18u, 7 dagen), highlighted today column, info banner "stap 8"
+- `ProjectenView.jsx` — Kanban placeholder (Active/Paused/Done columns)
+- `InstellingenView.jsx` — Tabs (Kanalen/Stijl/Account), Account info display
+- `ChannelsSettings.jsx` — Per kanaal status badge, Verbinden knop opent OAuth flow in nieuw venster, Sync nu mutation, Ontkoppel via DELETE
+
+**App & layout**
+- `App.jsx` — View routing op `view` state + dispatch naar 11 views, modal state management (snooze/done/schedule), keyboard shortcuts (1-9 view switch, Escape sluit overlay), ConversationView vervangt main area, ContactDetail slide-in vanaf rechts
+- `Sidebar.jsx` — Update: gebruikt `NAV_ITEMS` constant, shortcut hints in title, channel-dots tonen connected state
+- `main.jsx` — `QueryClientProvider` + `ToastProvider` wrappers, staleTime 30s, refetchOnWindowFocus true
+
+**Server fixes**
+- `PATCH /api/messages/:id/waiting` — Nieuwe route voor "Tot ze reageren" status
+- `/api/contacts/nudges?min_days=N` — Override per-contact threshold zodat demo data zichtbaar is met threshold 0
+- `/api/messages` search — Verbreed naar `done_note` en `body_text` zodat Logboek-zoek op afhandel-notities werkt
+
+### Getest
+
+- ✅ `npm run build` → 120 modules transformed, 283 kB JS (gzip 86 kB), geen errors
+- ✅ Snooze flow: PATCH /api/messages/m2/snooze → snoozed_until → verschijnt in snoozed list → reopen → status=open
+- ✅ Done flow: PATCH /api/messages/m11/done met note+category → search "telefonisch" matched
+- ✅ Waiting flow: PATCH /api/messages/m7/waiting → status=waiting, reopen → status=open
+- ✅ Nudges threshold: `?min_days=0` → 6 contacten, `?min_days=14` → 0 (correct met demo data)
+- ✅ Contact edit: PATCH /api/contacts/c1 met company+tags → persistent na re-fetch
+- ✅ Vite proxy: GET via :5173 (later 5174) → API call lukt
+- ✅ Alle imports resolve (build is canonical check)
+
+### Bugs gevonden & gefixt
+
+1. **Stap 1 server bleef hangen na `kill`** met `node --watch` → moest expliciet PIDs killen. Geen code-fix nodig, alleen process hygiene voor toekomstige sessies.
+2. **Logboek search miste done_note** → /api/messages LIKE query verbreed van (snippet, subject, contact.name) naar ook (done_note, body_text). Hiermee werkt zoeken op afhandel-notities én body tekst.
+3. **Nudges count was 0 met demo data** (alle contacten hebben recent activiteit) → server endpoint `?min_days=N` override toegevoegd, frontend defaultet naar 0 zodat de view in de demo iets toont; threshold toggle (0/7/14/21) maakt het echte gedrag testbaar.
+4. **Snooze modal "Tot ze reageren"** had geen server endpoint → `PATCH /api/messages/:id/waiting` toegevoegd, hook `useWaitingMessage` toegevoegd.
+
+### Niet gedaan (bewust)
+
+- **j/k navigatie in lijsten** — vereist gedeelde "active row" state per view; complex en niet kritiek voor stap 2. Keyboard 1-9 + Escape wel geïmplementeerd.
+- **`/` focus zoekbalk** — vereist refs per view; later.
+- **Bulk select-mode in inbox** — geen UI nodig zolang er ~7 berichten zijn; API bulk endpoints werken al sinds stap 1.
+- **AI varianten / verzenden / Calendar create** — placeholder toasts; komt in stap 3/8/11.
+
+### Volgende stap
+
+Stap 3: Echte Gmail synchronisatie. Token gebruiken (al verbonden via OAuth), Gmail API History + Messages list ophalen, sanitizen, opslaan in `messages` table met contact_matcher.
