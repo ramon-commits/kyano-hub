@@ -19,5 +19,18 @@ db.pragma('foreign_keys = ON');
 const schema = readFileSync(SCHEMA_PATH, 'utf-8');
 db.exec(schema);
 
+// Rebuild FTS5 index als de tabel leeg is maar er wel messages bestaan
+// (eerste boot na FTS-toevoeging, of na een crash)
+try {
+  const msgCount = db.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
+  const ftsCount = db.prepare('SELECT COUNT(*) AS n FROM messages_fts').get().n;
+  if (msgCount > 0 && ftsCount === 0) {
+    db.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')");
+    console.log(`🔎 FTS5 index rebuilt voor ${msgCount} bestaande berichten`);
+  }
+} catch (e) {
+  console.error('FTS rebuild check failed:', e.message);
+}
+
 export default db;
 export { DB_PATH };

@@ -3,7 +3,7 @@ import ChannelBadge from '../shared/ChannelBadge.jsx';
 import PriorityBadge from '../shared/PriorityBadge.jsx';
 import { cn, timeAgo } from '../../lib/utils.js';
 
-export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, showWakeUp, showDoneInfo }) {
+export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, onBlock, showWakeUp, showDoneInfo }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
 
@@ -88,6 +88,11 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           {onArchive ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onArchive(m); }} title="Archiveer" hoverColor="hover:bg-gray-200 hover:text-gray-900">
               🗑️
+            </ActionBtn>
+          ) : null}
+          {onBlock && m.contact_email ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onBlock(m); }} title="Blokkeer afzender" hoverColor="hover:bg-red-50 hover:text-red-700">
+              🚫
             </ActionBtn>
           ) : null}
         </div>

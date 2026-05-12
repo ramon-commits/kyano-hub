@@ -45,3 +45,16 @@ export function useUpdateContact() {
     },
   });
 }
+
+export function useUpdateNudgeSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, remind_after_days, is_active }) =>
+      api.patch(`/contacts/${id}/nudge-settings`, { remind_after_days, is_active }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['nudges'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      qc.invalidateQueries({ queryKey: ['daily-summary'] });
+    },
+  });
+}

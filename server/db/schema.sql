@@ -1,3 +1,19 @@
+-- Runtime configuratie key/value (Unipile credentials, etc.)
+CREATE TABLE IF NOT EXISTS app_config (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Sender rules voor block / newsletter / info classificatie
+CREATE TABLE IF NOT EXISTS sender_rules (
+  id TEXT PRIMARY KEY,
+  email_pattern TEXT NOT NULL,
+  rule TEXT NOT NULL CHECK(rule IN ('allow','block','newsletter','info')),
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sender_rules_pattern ON sender_rules(email_pattern);
+
 -- Kanalen (email accounts, WhatsApp lijnen, etc.)
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY,

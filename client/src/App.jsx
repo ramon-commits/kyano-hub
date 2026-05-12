@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Sidebar from './components/layout/Sidebar.jsx';
 import InboxView from './components/inbox/InboxView.jsx';
 import SnoozedView from './components/snoozed/SnoozedView.jsx';
@@ -12,13 +13,17 @@ import InstellingenView from './components/settings/InstellingenView.jsx';
 import PlaceholderView from './components/views/PlaceholderView.jsx';
 import ConversationView from './components/conversation/ConversationView.jsx';
 import ContactDetail from './components/contacts/ContactDetail.jsx';
+import WelcomeScreen from './components/welcome/WelcomeScreen.jsx';
 import SnoozeModal from './components/modals/SnoozeModal.jsx';
 import DoneModal from './components/modals/DoneModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
 import { useHealth } from './hooks/useStats.js';
 import { useArchiveMessage, useDoneMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useWaitingMessage } from './hooks/useMessages.js';
+import { useAuthStatus } from './hooks/useChannels.js';
 import { useToast } from './hooks/useToast.jsx';
 import { useKeyboard } from './hooks/useKeyboard.js';
+import { useNotifications } from './hooks/useNotifications.js';
+import { api } from './lib/api.js';
 import { NAV_ITEMS } from './lib/constants.js';
 
 function HealthBadge() {
@@ -140,10 +145,29 @@ export default function App() {
     toast.info('AI varianten worden gebouwd in stap 11', '🤖 Komt eraan');
   };
 
-  const onScheduleSave = ({ title, date, time, duration, calendar }) => {
-    setScheduleModal({ open: false, contact: null, message: null });
-    toast.info(`Calendar integratie wordt gebouwd in stap 8 — "${title}" op ${date} ${time} (${duration}min, ${calendar})`, '📅 Genoteerd');
+  const qc = useQueryClient();
+  const onBlock = async (m) => {
+    if (!m.contact_email) return;
+    const domain = m.contact_email.split('@')[1];
+    const useDomain = domain && confirm(`Blokkeer alleen ${m.contact_email}?\n\nOK = alleen dit adres\nAnnuleren = hele @${domain} domein`);
+    const pattern = useDomain ? m.contact_email : (domain ? '@' + domain : m.contact_email);
+    try {
+      await api.post('/settings/sender-rules', { email_pattern: pattern, rule: 'block' });
+      toast.success(`${pattern} geblokkeerd — je ziet nooit meer berichten van dit ${useDomain ? 'adres' : 'domein'}`, '🚫 Geblokkeerd');
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      if (selectedMessageId === m.id) setSelectedMessageId(null);
+    } catch (e) { toast.error(e.message); }
   };
+
+  // Auth status — voor welcome screen detectie
+  const { data: authStatus, isLoading: authLoading } = useAuthStatus();
+  const noAccountsConnected = !authLoading && authStatus
+    && (authStatus.accounts || []).every((a) => !a.is_connected);
+
+  // SSE notifications
+  useNotifications({ enabled: !noAccountsConnected });
+
 
   // Keyboard shortcuts
   const shortcutMap = useMemo(() => {
@@ -189,9 +213,9 @@ export default function App() {
 
     switch (view) {
       case 'inbox':
-        return <InboxView onOpenMessage={openMessage} onSnooze={handleSnooze} onDone={handleDone} onSchedule={handleSchedule} selectedId={selectedMessageId} />;
+        return <InboxView onOpenMessage={openMessage} onSnooze={handleSnooze} onDone={handleDone} onSchedule={handleSchedule} onOpenContact={openContact} onBlock={onBlock} selectedId={selectedMessageId} />;
       case 'snoozed':
-        return <SnoozedView onOpenMessage={openMessage} onReopen={onReopen} onDone={handleDone} selectedId={selectedMessageId} />;
+        return <SnoozedView onOpenMessage={openMessage} onReopen={onReopen} onDone={handleDone} onSnooze={handleSnooze} selectedId={selectedMessageId} />;
       case 'logboek':
         return <LogboekView onOpenMessage={openMessage} onReopen={onReopen} selectedId={selectedMessageId} />;
       case 'contacten':
@@ -201,7 +225,7 @@ export default function App() {
       case 'nudges':
         return <NudgesView onOpenContact={openContact} onSchedule={handleSchedule} />;
       case 'calendar':
-        return <CalendarView />;
+        return <CalendarView onScheduleNew={() => handleSchedule(null)} />;
       case 'projecten':
         return <ProjectenView />;
       case 'analytics':
@@ -214,6 +238,18 @@ export default function App() {
         return <PlaceholderView title="Onbekende view" />;
     }
   };
+
+  // Welcome screen voor fresh installs (geen accounts verbonden EN op inbox view)
+  if (noAccountsConnected && view === 'inbox' && !selectedMessageId) {
+    return (
+      <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
+        <Sidebar active={view} onSelect={(id) => { setView(id); setSelectedMessageId(null); }} />
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <WelcomeScreen onGoToSettings={() => setView('instellingen')} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
@@ -257,8 +293,8 @@ export default function App() {
       <ScheduleModal
         open={scheduleModal.open}
         onClose={() => setScheduleModal({ open: false, contact: null, message: null })}
-        onSchedule={onScheduleSave}
         contactName={scheduleModal.contact?.name || scheduleModal.message?.contact_name}
+        contactEmail={scheduleModal.contact?.email || scheduleModal.message?.contact_email}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import db from '../db/init.js';
 import { isConnected } from '../services/gmail-oauth.js';
-import { getPollerState } from '../services/gmail-poller.js';
+import { getPollerState } from '../services/poller.js';
 
 const router = Router();
 

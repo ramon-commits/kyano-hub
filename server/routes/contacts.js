@@ -153,6 +153,26 @@ router.patch('/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id));
 });
 
+// PATCH /api/contacts/:id/nudge-settings
+router.patch('/:id/nudge-settings', (req, res) => {
+  const exists = db.prepare('SELECT 1 FROM contacts WHERE id = ?').get(req.params.id);
+  if (!exists) return res.status(404).json({ error: 'Contact not found' });
+  const { remind_after_days, is_active } = req.body || {};
+  db.prepare(`
+    INSERT INTO nudge_settings (contact_id, remind_after_days, is_active)
+    VALUES (@contact_id, @remind_after_days, @is_active)
+    ON CONFLICT(contact_id) DO UPDATE SET
+      remind_after_days = COALESCE(excluded.remind_after_days, nudge_settings.remind_after_days),
+      is_active = COALESCE(excluded.is_active, nudge_settings.is_active)
+  `).run({
+    contact_id: req.params.id,
+    remind_after_days: Number.isInteger(remind_after_days) ? remind_after_days : null,
+    is_active: typeof is_active === 'boolean' ? (is_active ? 1 : 0) : null,
+  });
+  const updated = db.prepare('SELECT * FROM nudge_settings WHERE contact_id = ?').get(req.params.id);
+  res.json({ ok: true, settings: updated });
+});
+
 // POST /api/contacts/merge
 router.post('/merge', (req, res) => {
   const { keep_id, merge_id } = req.body;

@@ -98,7 +98,7 @@ export default function ConversationView({
       </header>
 
       <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
-        {isEmail ? <EmailThread message={m} threadMessages={threadMessages} /> : <ChatThread message={m} />}
+        {isEmail ? <EmailThread message={m} threadMessages={threadMessages} /> : <ChatThread message={m} threadMessages={threadMessages} />}
       </div>
 
       <ReplyComposer

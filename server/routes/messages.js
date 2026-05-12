@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid';
 import { sendReply, sendNew } from '../services/gmail-send.js';
 import { markAsReadInGmail } from '../services/gmail-labels.js';
 import { matchContact } from '../services/contact-matcher.js';
+import * as unipile from '../services/unipile.js';
 
 const router = Router();
 
@@ -51,8 +52,25 @@ router.get('/', (req, res) => {
   if (priority) { where.push('m.priority = @priority'); params.priority = priority; }
 
   if (search) {
-    where.push(`(m.snippet LIKE @search OR m.subject LIKE @search OR c.name LIKE @search OR m.done_note LIKE @search OR m.body_text LIKE @search)`);
-    params.search = `%${search}%`;
+    // FTS5 voor done-status (logboek) — alleen pure tekstmatch in snippet/subject/done_note
+    // LIKE-fallback voor andere statussen of bij FTS errors
+    const useFts = (status === 'done');
+    if (useFts) {
+      // Escape: vervang " met "" en wrap in quotes; voeg * voor prefix match
+      const cleaned = String(search).replace(/[^\p{L}\p{N}\s@._-]/gu, ' ').trim();
+      if (cleaned.length >= 2) {
+        const ftsQuery = `"${cleaned.replace(/"/g, '""')}"*`;
+        where.push('m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH @ftsQuery)');
+        params.ftsQuery = ftsQuery;
+      } else {
+        // Te kort voor FTS, fallback LIKE
+        where.push(`(m.snippet LIKE @search OR m.subject LIKE @search OR c.name LIKE @search OR m.done_note LIKE @search)`);
+        params.search = `%${search}%`;
+      }
+    } else {
+      where.push(`(m.snippet LIKE @search OR m.subject LIKE @search OR c.name LIKE @search OR m.done_note LIKE @search OR m.body_text LIKE @search)`);
+      params.search = `%${search}%`;
+    }
   }
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -102,7 +120,42 @@ router.post('/:id/reply', async (req, res, next) => {
     if (!plainBody && !htmlBody) return res.status(400).json({ error: 'body is required' });
 
     if (original.channel_type !== 'email') {
-      return res.status(400).json({ error: 'Replies via API only supported for email channels (stap 3). WhatsApp komt in stap 9.' });
+      // Unipile-pad: WhatsApp / Instagram / LinkedIn
+      if (!unipile.isConfigured()) {
+        return res.status(400).json({
+          error: 'Unipile niet geconfigureerd — gebruik de deep-link of configureer Unipile in Instellingen',
+          deep_link: original.deep_link,
+          needs_setup: true,
+        });
+      }
+      const chatId = original.thread_id;
+      if (!chatId) return res.status(400).json({ error: 'Geen thread_id (chat) gevonden voor dit bericht' });
+      try {
+        const sent = await unipile.sendMessage(chatId, plainBody);
+        const localId = uuid();
+        db.prepare(`
+          INSERT OR IGNORE INTO messages (
+            id, external_id, channel_id, contact_id, direction, snippet, body_text,
+            deep_link, thread_id, status, priority, received_at
+          ) VALUES (
+            @id, @external_id, @channel_id, @contact_id, 'outbound', @snippet, @body_text,
+            @deep_link, @thread_id, 'archived', 'medium', @received_at
+          )
+        `).run({
+          id: localId,
+          external_id: sent?.id || sent?.message_id || `local-${localId}`,
+          channel_id: original.channel_id,
+          contact_id: original.contact_id,
+          snippet: plainBody.slice(0, 200),
+          body_text: plainBody,
+          deep_link: original.deep_link,
+          thread_id: chatId,
+          received_at: new Date().toISOString(),
+        });
+        return res.json({ ok: true, message_id: localId, channel_type: original.channel_type });
+      } catch (e) {
+        return res.status(500).json({ error: e.message, deep_link: original.deep_link });
+      }
     }
 
     const to = original.contact_email;

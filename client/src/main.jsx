@@ -15,6 +15,13 @@ const queryClient = new QueryClient({
   },
 });
 
+// Register PWA service worker (production only — dev server doesn't serve sw.js consistently)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* niet kritiek */ });
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

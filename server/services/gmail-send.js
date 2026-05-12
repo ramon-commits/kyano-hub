@@ -74,10 +74,20 @@ function encodeBase64Url(input) {
   return Buffer.from(input, 'utf-8').toString('base64url');
 }
 
-// Verkrijg het authenticated account email voor From
-async function getAccountFrom(client) {
+// Verkrijg het authenticated account email voor From — gecached per channel (5 min)
+const FROM_CACHE = new Map(); // channelId -> { name, email, fetchedAt }
+const FROM_TTL_MS = 5 * 60 * 1000;
+
+async function getAccountFrom(client, channelId) {
+  if (channelId) {
+    const cached = FROM_CACHE.get(channelId);
+    if (cached && (Date.now() - cached.fetchedAt) < FROM_TTL_MS) {
+      return { name: cached.name, email: cached.email };
+    }
+  }
   const oauth2 = google.oauth2({ version: 'v2', auth: client });
   const { data } = await oauth2.userinfo.get();
+  if (channelId) FROM_CACHE.set(channelId, { name: data.name, email: data.email, fetchedAt: Date.now() });
   return { name: data.name, email: data.email };
 }
 
@@ -85,7 +95,7 @@ export async function sendReply(channelId, { threadId, to, cc, bcc, subject, bod
   const client = getClient(channelId);
   if (!client) throw new Error(`Channel ${channelId} is not connected`);
 
-  const me = await getAccountFrom(client);
+  const me = await getAccountFrom(client, channelId);
   const fromHeader = me.name ? `"${me.name}" <${me.email}>` : me.email;
 
   const raw = buildMime({
@@ -120,7 +130,7 @@ export async function createDraft(channelId, { threadId, to, cc, bcc, subject, b
   const client = getClient(channelId);
   if (!client) throw new Error(`Channel ${channelId} is not connected`);
 
-  const me = await getAccountFrom(client);
+  const me = await getAccountFrom(client, channelId);
   const fromHeader = me.name ? `"${me.name}" <${me.email}>` : me.email;
 
   const raw = buildMime({

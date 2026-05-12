@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ChannelsSettings from './ChannelsSettings.jsx';
+import UnipileSettings from './UnipileSettings.jsx';
 import { cn } from '../../lib/utils.js';
 
 const TABS = [
@@ -34,7 +35,12 @@ export default function InstellingenView() {
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-8 my-6">
-          {tab === 'channels' ? <ChannelsSettings /> : null}
+          {tab === 'channels' ? (
+            <div className="space-y-6">
+              <ChannelsSettings />
+              <UnipileSettings />
+            </div>
+          ) : null}
           {tab === 'style' ? (
             <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-6 text-sm text-amber-900">
               🎨 Stijlprofiel wordt gebouwd in stap 11. Hier komen je communicatie-DNA, signatures, en per-kanaal toon.

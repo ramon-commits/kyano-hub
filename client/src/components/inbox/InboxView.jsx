@@ -4,6 +4,8 @@ import { useStats } from '../../hooks/useStats.js';
 import { useToast } from '../../hooks/useToast.jsx';
 import MessageRow from './MessageRow.jsx';
 import MessageFilters from './MessageFilters.jsx';
+import DailySummaryCard from './DailySummaryCard.jsx';
+import TodayWidget from './TodayWidget.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import { cn } from '../../lib/utils.js';
@@ -27,7 +29,7 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -96,7 +98,11 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className={cn('mx-8 my-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm')}>
+        <div className="mx-8 mt-6">
+          <DailySummaryCard onOpenContact={onOpenContact} />
+          <TodayWidget />
+        </div>
+        <div className={cn('mx-8 mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm')}>
           {isLoading ? (
             <div className="py-16"><LoadingSpinner label="Berichten laden…" /></div>
           ) : messages.length === 0 ? (
@@ -115,6 +121,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
                 onSnooze={onSnooze}
                 onDone={onDone}
                 onSchedule={onSchedule}
+                onBlock={onBlock}
               />
             ))
           )}

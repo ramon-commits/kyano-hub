@@ -84,6 +84,19 @@ function deepLinkFor(channel, messageId) {
   return `https://mail.google.com/mail/u/${idx}/#inbox/${messageId}`;
 }
 
+// Sender rule lookup: match op exact email of domein
+function findSenderRule(senderEmail) {
+  if (!senderEmail) return null;
+  const lower = senderEmail.toLowerCase();
+  const domain = lower.split('@')[1];
+  const rule = db.prepare(`
+    SELECT rule FROM sender_rules
+    WHERE lower(email_pattern) = ? OR (? IS NOT NULL AND lower(email_pattern) = ?)
+    LIMIT 1
+  `).get(lower, domain || null, domain ? '@' + domain : '');
+  return rule?.rule || null;
+}
+
 // ===== Persist a Gmail message =====
 function persistMessage(channel, msg) {
   const payload = msg.payload || {};
@@ -105,7 +118,18 @@ function persistMessage(channel, msg) {
   //   inbound zonder UNREAD → 'archived' (al gelezen in Gmail, niet meer actie nodig)
   const labelIds = Array.isArray(msg.labelIds) ? msg.labelIds : [];
   const isUnread = labelIds.includes('UNREAD');
-  const status = isOutbound ? 'archived' : (isUnread ? 'open' : 'archived');
+  let status = isOutbound ? 'archived' : (isUnread ? 'open' : 'archived');
+
+  // Sender rules: block / newsletter / info → forceer archived (of skip bij block)
+  if (!isOutbound && from.email) {
+    const senderRule = findSenderRule(from.email);
+    if (senderRule === 'block') {
+      // Skip — bericht wordt niet opgeslagen
+      return { inserted: false, blocked: true };
+    } else if (senderRule === 'newsletter' || senderRule === 'info') {
+      status = 'archived';
+    }
+  }
 
   // Body
   const { html, text } = extractBody(payload);

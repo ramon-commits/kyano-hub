@@ -333,3 +333,106 @@ Deze flows zijn klaar voor Ramon om handmatig te testen via Instellingen → Kan
 ### Volgende stap
 
 Stap 4: Productie hardening — token rotation alerts, OAuth scope minimalisatie audit, structured logging, error tracking. Of stap 5: AI-assisted replies (Claude integratie).
+
+---
+
+## Stap 4 t/m 10 — v1.0 COMPLEET
+
+**Datum:** 2026-05-13
+**Status:** ✅ Code af, build groen, live API endpoints geverifieerd
+
+### Stap 4 — Contacts polish + merge UI
+- `ContactEditModal`: "Geavanceerd: samenvoegen" disclosure met zoek + select + POST /contacts/merge
+- Merge UI invalideert messages + contacts queries → UI refresht
+
+### Stap 5 — Snooze grouping + change-date
+- `SnoozedView` groepeert op Vandaag / Morgen / Deze week / Later / Wacht op reactie
+- `onSnooze` prop op MessageRow in snoozed view → "verander datum" heropent SnoozeModal
+
+### Stap 6 — FTS5 + CSV export
+- `db/init.js`: FTS5 rebuild guard — rebuild als messages_fts leeg is maar messages-tabel niet (eerste boot na trigger-toevoeging)
+- `/api/messages?status=done&search=` gebruikt FTS5 MATCH met geescapede prefix-query (`"woord"*`)
+- Niet-done queries blijven LIKE (sneller voor kleine open inbox)
+- `server/routes/export.js`: `GET /api/export/logboek?from=&to=&contact_id=&channel_type=&format=csv|json` — UTF-8 BOM voor Excel
+- LogboekView heeft "📥 Exporteer CSV" knop (download via `<a download>`)
+
+### Stap 7 — Daily summary + nudge mute + felicitatie
+- `GET /api/stats/daily-summary`: open_count, urgent_count, snoozed_waking_today, done_yesterday, birthdays_today, birthdays_week, nudges_top3
+- `PATCH /api/contacts/:id/nudge-settings`: remind_after_days + is_active upsert
+- `DailySummaryCard` component: gradient banner met greeting + chips per categorie, dismissable per dag via localStorage `kyano:dailySummaryDismissed`
+- `useUpdateNudgeSettings()` hook
+- NudgesView krijgt "🔇 Mute" knop per contact (zet `is_active=false`)
+- Live test: daily-summary returned correcte counts (open=1053, nudges_top3=3, etc.)
+
+### Stap 8 — Google Calendar
+- `services/calendar.js` herschreven: `gmailFor` hergebruikt OAuth clients van Gmail, `listEvents(channelId, timeMin, timeMax)`, `listAllEvents` over alle connected accounts, `createEvent` met attendees + sendUpdates
+- `routes/calendar.js`: GET /events, GET /today, POST /events (met duration_minutes fallback)
+- `useCalendarEvents(from, to)` + `useCalendarToday` + `useCreateEvent` hooks, 5min staleTime
+- `CalendarView`: day-list per week (eenvoudiger dan grid, nog steeds week-overzicht), kleuren per kanaal (blauw/groen/oranje/paars), prev/today/next navigatie, "+ Nieuw event" knop
+- `ScheduleModal`: nu echt — POST naar /api/calendar/events, Calendar account dropdown filtert connected accounts, attendee_email + location + description velden
+- `TodayWidget` component in InboxView: compacte lijst van vandaag's events met klik-naar-Google-Calendar links
+
+### Stap 9 — Unipile (WhatsApp + LinkedIn + Instagram LIVE)
+- `db/schema.sql`: nieuwe tabellen `app_config` (key/value voor runtime config) en `sender_rules`
+- `db/seed.js`: nieuwe channels `li-1` (LinkedIn) en `ig-1` (Instagram) — idempotent INSERT OR IGNORE
+- `services/app-config.js`: get/set/getUnipileCreds (DB > env fallback)
+- `services/unipile.js`: REST client met fetch, X-API-KEY auth, methodes `listAccounts/listChats/getChatMessages/sendMessage/startNewChat/getAccountMe/isConfigured/deepLinkFor/unipileTypeToChannel`
+- `services/unipile-sync.js`: `autoMapAccounts` koppelt Unipile account → lokaal channel (eerste WA → wa-1, etc.), `persistUnipileMessage` met direction detectie + auto-wake + thread_id=chat_id, `syncUnipileAccount` + `syncAllUnipile`
+- `services/poller.js` (hernoemd van gmail-poller.js): unified poller voor Gmail + Unipile, locking via `isRunning`, per-channel POLL_STATE, broadcast SSE event na elke run met N nieuwe berichten
+- Reply route `/api/messages/:id/reply` ondersteunt nu non-email channels via `unipile.sendMessage(thread_id, text)`, met deep-link fallback bij failures
+- `/api/sync/unipile` route + `/api/sync/:channelId` herkent Unipile channels (gebruikt unipile_account_id uit config_json)
+- `routes/settings.js`: `/api/settings/unipile` GET (status) + POST (validate by calling listAccounts, save in app_config) + DELETE
+- `routes/settings.js`: `/api/settings/sender-rules` GET/POST/DELETE — POST archiveert direct alle open messages van die sender
+- `ChatThread` toont echte chat bubbels met date-dividers, outbound blauw rechts, inbound grijs links
+- `UnipileSettings` component (in Instellingen → Kanalen): instructies-panel met API Key + DSN inputs als niet geconfigureerd, anders "✅ Verbonden" met sync info + Loskoppel knop
+- Live geverifieerd: `POST /api/sync/unipile` → **57 nieuwe WhatsApp berichten gesynced** vanuit echte Unipile account, plus LinkedIn account gevonden
+
+### Stap 10 — PWA + SSE + Welcome + Sender Rules + Keyboard
+- `client/public/manifest.json` + `icon.svg/192.svg/512.svg` (gradient K op donker, SVG = lossless op alle sizes)
+- `client/public/sw.js`: cache-first voor assets, network-first voor HTML, NEVER voor /api en /auth (auth-protected). Geregistreerd in main.jsx alleen in PROD mode (dev = HMR conflict)
+- `services/notification-bridge.js`: SSE client set met keepalive ping (25s), broadcast helper, stale-connection cleanup elke 30 min
+- `routes/events.js`: `GET /api/events/stream` (SSE), `GET /api/events/status` (subscribers count)
+- Poller broadcastet `new-messages` event met de 10 nieuwste open inbound berichten
+- `useNotifications` hook: vraagt Notification permission éénmaal (gecached in localStorage), EventSource subscribe + Desktop Notification API met click-to-focus
+- `WelcomeScreen` component: getoond als geen accounts verbonden EN view='inbox'. 4-stappen guided onboarding met "Verbind je eerste account" knop → setView('instellingen')
+- `sender_rules` tabel + `findSenderRule()` in gmail-sync.js: block → message wordt niet opgeslagen (skip), newsletter/info → forceer status='archived', allow/no-rule → normaal
+- `🚫` block knop op MessageRow hover, vraagt "alleen dit adres of hele domein" via confirm, POST sender-rules + archiveert bestaande messages
+- `package.json`: `dev:client` heeft nu `-- --open` flag → browser opent automatisch
+
+### Globale fixes
+- `gmail-send.getAccountFrom`: gecached per channelId met 5-min TTL (voorkomt extra userinfo call per send)
+- Calendar hooks: 5min staleTime
+- Welcome screen logic: alleen tonen als view='inbox' EN geen accounts (zodat Settings reachable blijft)
+- SSE: keepalive ping voorkomt connection drop tijdens slaapstand; bij drop herstart browser EventSource automatisch
+- Sender rule block: ondersteunt zowel exact email (`user@x.com`) als domein-pattern (`@x.com`) match
+
+### Getest
+
+- ✅ `npm run build` → 127 modules transformed, 311 kB JS (gzip 93 kB), geen errors
+- ✅ Server boot: alle nieuwe routes geladen (poller, settings, events, export)
+- ✅ Channels endpoint toont 8 kanalen (4 email + wa-1 + wa-2 + li-1 + ig-1)
+- ✅ `/api/settings/unipile` toont configured=true (uit .env)
+- ✅ `/api/settings/sender-rules` POST + GET + DELETE flow werkt
+- ✅ `/api/stats/daily-summary` returnt correcte counts (open=1053, urgent=0, birthdays=0, nudges_top3=3, done_yesterday=0)
+- ✅ `/api/calendar/today` werkt (events=0 voor de test gebruiker)
+- ✅ `/api/export/logboek` returnt CSV met UTF-8 BOM
+- ✅ `/api/events/stream` SSE: `event: connected` direct ontvangen
+- ✅ **Live Unipile sync: 57 nieuwe WhatsApp messages gesynced + LinkedIn account auto-mapped** naar lokale channels
+- ✅ FTS5 search via `/api/messages?status=done&search=...` (escaped prefix query)
+
+### Bugs gefixt tijdens build
+
+1. **Seed had hard "skip if existing channels" guard** → nieuwe li-1/ig-1 werden niet toegevoegd aan bestaande DB. Fix: idempotent `INSERT OR IGNORE` per channel.
+2. **Sync route `/:channelId` matchte `/all` en `/unipile`** — al gefixt in stap 3, maar opnieuw geverifieerd na toevoeging van `/unipile` route.
+3. **Reply naar non-email kanaal had hard 400** → vervangen door echte Unipile send met deep-link fallback.
+
+### Niet getest (vereist live interactie)
+
+- Manual click "Verbinden" voor extra Gmail accounts (al 4 verbonden)
+- PWA install via Chrome menu
+- Desktop notification bij echte nieuwe email (vereist browser open + permission granted)
+- Welcome screen (alle accounts al verbonden)
+
+### Volgende stap
+
+Stap 11: AI assistant (Claude integration). Style profiel, thread analyse, reply varianten, ask interface.

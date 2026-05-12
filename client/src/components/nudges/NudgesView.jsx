@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useNudges } from '../../hooks/useContacts.js';
+import { useNudges, useUpdateNudgeSettings } from '../../hooks/useContacts.js';
 import Avatar from '../shared/Avatar.jsx';
 import Badge from '../shared/Badge.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
+import { useToast } from '../../hooks/useToast.jsx';
 import { cn } from '../../lib/utils.js';
 
 const THRESHOLDS = [
@@ -24,6 +25,17 @@ export default function NudgesView({ onOpenContact, onSchedule }) {
   const [threshold, setThreshold] = useState(0);
   const { data, isLoading } = useNudges(threshold);
   const nudges = data?.nudges || [];
+  const updateNudge = useUpdateNudgeSettings();
+  const toast = useToast();
+
+  const mute = async (c) => {
+    try {
+      await updateNudge.mutateAsync({ id: c.id, is_active: false });
+      toast.info(`Nudges voor ${c.name} uitgezet`, '🔇 Gemuted');
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -92,6 +104,13 @@ export default function NudgesView({ onOpenContact, onSchedule }) {
                         className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
                       >
                         💬 Bericht
+                      </button>
+                      <button
+                        onClick={() => mute(n)}
+                        title="Geen nudges meer voor dit contact"
+                        className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                      >
+                        🔇 Mute
                       </button>
                     </div>
                   </div>

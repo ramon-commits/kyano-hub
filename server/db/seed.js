@@ -9,29 +9,31 @@ const channels = [
   { id: 'gmail-4', type: 'email', label: 'brugman.ramon@gmail.com', account_email: 'brugman.ramon@gmail.com' },
   { id: 'wa-1', type: 'whatsapp', label: 'WhatsApp Privé', account_email: null },
   { id: 'wa-2', type: 'whatsapp', label: 'WhatsApp FitAid Business', account_email: null },
+  { id: 'li-1', type: 'linkedin', label: 'LinkedIn', account_email: null },
+  { id: 'ig-1', type: 'instagram', label: 'Instagram', account_email: null },
 ];
 
 export function seed() {
-  const existingChannels = db.prepare('SELECT COUNT(*) AS n FROM channels').get().n;
-  if (existingChannels > 0) {
-    return;
-  }
-
+  // Idempotent: voeg ontbrekende channels toe (e.g. li-1, ig-1 in latere versies)
   const insertChannel = db.prepare(`
-    INSERT INTO channels (id, type, label, account_email, is_active)
+    INSERT OR IGNORE INTO channels (id, type, label, account_email, is_active)
     VALUES (@id, @type, @label, @account_email, 1)
   `);
   const insertSyncState = db.prepare(`INSERT OR IGNORE INTO sync_state (channel_id) VALUES (?)`);
 
+  let added = 0;
   const tx = db.transaction(() => {
     for (const c of channels) {
-      insertChannel.run(c);
+      const r = insertChannel.run(c);
       insertSyncState.run(c.id);
+      if (r.changes > 0) added++;
     }
   });
 
   tx();
-  console.log(`✅ Seeded: ${channels.length} channels (geen demo data — sync brengt echte berichten binnen)`);
+  if (added > 0) {
+    console.log(`✅ Seeded: ${added} channel(s) toegevoegd (${channels.length} totaal verwacht)`);
+  }
 }
 
 // Eenmalige cleanup: verwijdert demo seed-berichten en orphaned contacten

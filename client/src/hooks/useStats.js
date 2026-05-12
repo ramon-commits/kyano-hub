@@ -17,3 +17,11 @@ export function useHealth() {
     retry: 1,
   });
 }
+
+export function useDailySummary() {
+  return useQuery({
+    queryKey: ['daily-summary'],
+    queryFn: () => api.get('/stats/daily-summary'),
+    staleTime: 5 * 60 * 1000, // 5 min
+  });
+}

@@ -50,12 +50,47 @@ router.get('/daily-summary', (_req, res) => {
   const open = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'open'`).get().n;
   const urgent = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'open' AND priority = 'high'`).get().n;
   const wakingToday = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'snoozed' AND date(snoozed_until) = date('now')`).get().n;
+  const doneYesterday = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'done' AND date(done_at) = date('now','-1 day')`).get().n;
+
+  // Birthdays today + within 7 days
+  const allWithBirthday = db.prepare(`SELECT id, name, company, birthday, avatar_initials, avatar_color FROM contacts WHERE birthday IS NOT NULL AND birthday != ''`).all();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const computed = allWithBirthday.map((c) => {
+    const [, m, d] = c.birthday.split('-').map(Number);
+    let next = new Date(now.getFullYear(), m - 1, d);
+    if (next < today) next = new Date(now.getFullYear() + 1, m - 1, d);
+    return { ...c, days_until: Math.round((next - today) / 86400000) };
+  });
+  const birthdaysToday = computed.filter((c) => c.days_until === 0);
+  const birthdaysWeek = computed.filter((c) => c.days_until > 0 && c.days_until <= 7).sort((a, b) => a.days_until - b.days_until);
+
+  // Top-3 nudges (langst niet gesproken, default threshold 14)
+  const nudgeRows = db.prepare(`
+    SELECT c.id, c.name, c.company, c.avatar_initials, c.avatar_color,
+      COALESCE(n.remind_after_days, 14) AS remind_after_days,
+      (SELECT MAX(received_at) FROM messages WHERE contact_id = c.id) AS last_message_at
+    FROM contacts c
+    LEFT JOIN nudge_settings n ON n.contact_id = c.id
+    WHERE COALESCE(n.is_active, 1) = 1
+  `).all();
+  const nudges = nudgeRows.map((c) => {
+    if (!c.last_message_at) return null;
+    const last = new Date(c.last_message_at).getTime();
+    const daysSince = Math.floor((Date.now() - last) / 86400000);
+    if (daysSince < c.remind_after_days) return null;
+    return { ...c, days_since: daysSince };
+  }).filter(Boolean).sort((a, b) => b.days_since - a.days_since).slice(0, 3);
 
   res.json({
-    date: new Date().toISOString().slice(0, 10),
-    open,
-    urgent,
-    waking_today: wakingToday,
+    date: today.toISOString().slice(0, 10),
+    open_count: open,
+    urgent_count: urgent,
+    snoozed_waking_today: wakingToday,
+    done_yesterday: doneYesterday,
+    birthdays_today: birthdaysToday,
+    birthdays_week: birthdaysWeek,
+    nudges_top3: nudges,
   });
 });
 

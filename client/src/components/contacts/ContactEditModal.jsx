@@ -1,10 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Modal from '../modals/Modal.jsx';
-import { useUpdateContact } from '../../hooks/useContacts.js';
+import { useContacts, useUpdateContact } from '../../hooks/useContacts.js';
+import { api } from '../../lib/api.js';
+import { useToast } from '../../hooks/useToast.jsx';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function ContactEditModal({ open, onClose, contact, onSaved }) {
   const [form, setForm] = useState({ name: '', company: '', email: '', phone: '', birthday: '', tags: '', notes: '' });
+  const [mergeTarget, setMergeTarget] = useState('');
+  const [mergeSearch, setMergeSearch] = useState('');
   const update = useUpdateContact();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { data: allContacts } = useContacts({ search: mergeSearch });
 
   useEffect(() => {
     if (open && contact) {
@@ -17,19 +25,41 @@ export default function ContactEditModal({ open, onClose, contact, onSaved }) {
         tags: contact.tags || '',
         notes: contact.notes || '',
       });
+      setMergeTarget('');
+      setMergeSearch('');
     }
   }, [open, contact]);
+
+  const mergeOptions = useMemo(() => {
+    if (!allContacts?.contacts) return [];
+    return allContacts.contacts.filter((c) => c.id !== contact?.id).slice(0, 50);
+  }, [allContacts, contact]);
 
   if (!contact) return null;
 
   const submit = async () => {
     try {
       await update.mutateAsync({ id: contact.id, ...form });
+      toast.success('Contact opgeslagen');
       onSaved?.();
       onClose?.();
     } catch (e) {
-      // Toast handled bovenliggend
-      console.error(e);
+      toast.error(e.message);
+    }
+  };
+
+  const doMerge = async () => {
+    if (!mergeTarget || mergeTarget === contact.id) return;
+    const other = mergeOptions.find((c) => c.id === mergeTarget);
+    if (!confirm(`Berichten van "${other?.name}" verplaatsen naar "${contact.name}"? Dit kan niet ongedaan worden.`)) return;
+    try {
+      await api.post('/contacts/merge', { keep_id: contact.id, merge_id: mergeTarget });
+      toast.success(`Samengevoegd met ${other?.name}`);
+      qc.invalidateQueries({ queryKey: ['contacts'] });
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      onClose?.();
+    } catch (e) {
+      toast.error(e.message || 'Merge mislukt');
     }
   };
 
@@ -83,6 +113,42 @@ export default function ContactEditModal({ open, onClose, contact, onSaved }) {
         <Field label="Notities">
           <textarea value={form.notes} onChange={set('notes')} rows={3} className={`${inputCls} resize-none`} />
         </Field>
+
+        <details className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+          <summary className="cursor-pointer text-amber-800">⚠️ Geavanceerd: samenvoegen met ander contact</summary>
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-amber-700">
+              Berichten van het geselecteerde contact worden verplaatst naar <strong>{contact.name}</strong>.
+              Lege velden worden aangevuld vanuit het andere contact. Het andere contact wordt verwijderd.
+            </p>
+            <input
+              type="text"
+              value={mergeSearch}
+              onChange={(e) => setMergeSearch(e.target.value)}
+              placeholder="Zoek contact…"
+              className={inputCls}
+            />
+            <select
+              value={mergeTarget}
+              onChange={(e) => setMergeTarget(e.target.value)}
+              className={`${inputCls} bg-white`}
+            >
+              <option value="">— Kies een contact om mee samen te voegen —</option>
+              {mergeOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.company ? `(${c.company})` : ''} {c.email ? `· ${c.email}` : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={doMerge}
+              disabled={!mergeTarget}
+              className="w-full rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Samenvoegen
+            </button>
+          </div>
+        </details>
       </div>
     </Modal>
   );
