@@ -11,7 +11,7 @@ import express from 'express';
 import cors from 'cors';
 
 import db from './db/init.js';
-import { seed } from './db/seed.js';
+import { seed, cleanupDemoData } from './db/seed.js';
 import { startSnoozeCron } from './services/snooze-cron.js';
 import { startGmailPoller } from './services/gmail-poller.js';
 import { startPurgeCron } from './services/purge-cron.js';
@@ -68,6 +68,7 @@ app.use(errorHandler);
 
 // Boot
 seed();
+cleanupDemoData();
 startSnoozeCron();
 startGmailPoller();
 startPurgeCron();

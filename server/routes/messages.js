@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
 import { sendReply, sendNew } from '../services/gmail-send.js';
+import { markAsReadInGmail } from '../services/gmail-labels.js';
 import { matchContact } from '../services/contact-matcher.js';
 
 const router = Router();
@@ -242,6 +243,16 @@ router.patch('/:id/done', (req, res) => {
 
   if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
   logInteraction(req.params.id, 'done', note);
+
+  // Best-effort: markeer ook als gelezen in Gmail (alleen voor email berichten)
+  const msg = db.prepare(`
+    SELECT m.external_id, m.channel_id, ch.type FROM messages m
+    LEFT JOIN channels ch ON ch.id = m.channel_id WHERE m.id = ?
+  `).get(req.params.id);
+  if (msg?.type === 'email' && msg.external_id) {
+    markAsReadInGmail(msg.channel_id, msg.external_id); // fire-and-forget
+  }
+
   res.json({ ok: true, id: req.params.id, status: 'done' });
 });
 
@@ -313,6 +324,15 @@ router.post('/bulk/done', (req, res) => {
     return n;
   });
   const updated = tx();
+
+  // Best-effort: markeer alle als gelezen in Gmail
+  const emails = db.prepare(`
+    SELECT m.external_id, m.channel_id FROM messages m
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    WHERE m.id IN (${ids.map(() => '?').join(',')}) AND ch.type = 'email' AND m.external_id IS NOT NULL
+  `).all(...ids);
+  for (const e of emails) markAsReadInGmail(e.channel_id, e.external_id);
+
   res.json({ ok: true, updated });
 });
 

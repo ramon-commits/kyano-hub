@@ -98,7 +98,14 @@ function persistMessage(channel, msg) {
   const accountEmail = channel.account_email?.toLowerCase();
   const isOutbound = from.email && accountEmail && from.email === accountEmail;
   const direction = isOutbound ? 'outbound' : 'inbound';
-  const status = isOutbound ? 'archived' : 'open';
+
+  // Status afgeleid van labelIds:
+  //   outbound → altijd 'archived' (al verzonden)
+  //   inbound + UNREAD label → 'open' (komt in inbox)
+  //   inbound zonder UNREAD → 'archived' (al gelezen in Gmail, niet meer actie nodig)
+  const labelIds = Array.isArray(msg.labelIds) ? msg.labelIds : [];
+  const isUnread = labelIds.includes('UNREAD');
+  const status = isOutbound ? 'archived' : (isUnread ? 'open' : 'archived');
 
   // Body
   const { html, text } = extractBody(payload);
@@ -214,9 +221,11 @@ async function initialSync(channel, client) {
   const gmail = google.gmail({ version: 'v1', auth: client });
   const profile = await getProfile(client);
 
+  // Alleen ongelezen inbox-berichten — geen archief, geen gelezen, geen verzonden
   const { data: list } = await gmail.users.messages.list({
     userId: 'me',
     maxResults: INITIAL_LIMIT,
+    q: 'is:unread label:inbox',
   });
 
   const messages = list.messages || [];
