@@ -63,7 +63,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
       const r = await syncAll.mutateAsync();
       const total = r.total_new ?? 0;
       if (total === 0) toast.info('Geen nieuwe berichten gevonden');
-      else toast.success(`${total} nieuwe bericht${total === 1 ? '' : 'en'}`, '📧 Sync klaar');
+      else toast.success(`${total} nieuwe bericht${total === 1 ? '' : 'en'}`, 'Sync klaar');
       const errors = (r.results || []).filter((x) => !x.ok);
       if (errors.length) toast.warning(`${errors.length} kanaal/kanalen gaf foutmelding — check Instellingen`);
     } catch (e) {
@@ -87,17 +87,17 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
             disabled={syncAll.isPending}
             className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span className={syncAll.isPending ? 'inline-block animate-spin' : ''}>🔄</span>
+            <i className={`fa-solid fa-arrows-rotate ${syncAll.isPending ? 'animate-spin' : ''}`} />
             {syncAll.isPending ? 'Synchroniseren…' : 'Nieuwe check'}
           </button>
         </div>
 
         {/* Metric cards */}
         <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <MetricCard icon="📬" label="Open" value={stats?.open_count} color={{ bg: '#eff6ff', text: '#3b82f6' }} />
-          <MetricCard icon="⏰" label="Snoozed" value={stats?.snoozed_count} color={{ bg: '#fff7ed', text: '#ea580c' }} />
-          <MetricCard icon="✅" label="Vandaag afgehandeld" value={stats?.done_today} color={{ bg: '#dcfce7', text: '#16a34a' }} />
-          <MetricCard icon="🔥" label="Urgent" value={stats?.urgent_count} color={{ bg: '#fef2f2', text: '#dc2626' }} />
+          <MetricCard icon={<i className="fa-solid fa-inbox" />} label="Open" value={stats?.open_count} color={{ bg: '#eff6ff', text: '#3b82f6' }} />
+          <MetricCard icon={<i className="fa-solid fa-clock" />} label="Snoozed" value={stats?.snoozed_count} color={{ bg: '#fff7ed', text: '#ea580c' }} />
+          <MetricCard icon={<i className="fa-solid fa-circle-check" />} label="Vandaag afgehandeld" value={stats?.done_today} color={{ bg: '#dcfce7', text: '#16a34a' }} />
+          <MetricCard icon={<i className="fa-solid fa-fire" />} label="Urgent" value={stats?.urgent_count} color={{ bg: '#fef2f2', text: '#dc2626' }} />
         </div>
 
         <MessageFilters
@@ -119,7 +119,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
             <div className="py-16"><LoadingSpinner label="Berichten laden…" /></div>
           ) : messages.length === 0 ? (
             <EmptyState
-              icon="🌅"
+              icon="sun"
               title={search ? 'Geen resultaten' : 'Inbox is leeg'}
               description={search ? 'Geen berichten die matchen met je zoekterm.' : 'Alle berichten zijn afgehandeld of gesnoozet. Tijd voor koffie.'}
             />

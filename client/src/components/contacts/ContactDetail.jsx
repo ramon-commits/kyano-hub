@@ -34,7 +34,7 @@ export default function ContactDetail({ contactId, onClose, onOpenMessage, onSch
                 onClick={() => setEditOpen(true)}
                 className="mt-2 inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
-                ✏️ Bewerken
+                <i className="fa-solid fa-pen mr-1" />Bewerken
               </button>
             </div>
           </>
@@ -47,20 +47,20 @@ export default function ContactDetail({ contactId, onClose, onOpenMessage, onSch
       {!contact ? null : (
         <>
           <div className="grid grid-cols-3 gap-2 border-b border-gray-100 px-5 py-3">
-            <ActionBtn icon="📅" label="Afspraak" onClick={() => onSchedule?.(contact)} />
-            <ActionBtn icon="✉️" label="Mail" disabled />
-            <ActionBtn icon="💬" label="WhatsApp" disabled />
+            <ActionBtn icon={<i className="fa-solid fa-calendar-days" />} label="Afspraak" onClick={() => onSchedule?.(contact)} />
+            <ActionBtn icon={<i className="fa-solid fa-envelope" />} label="Mail" disabled />
+            <ActionBtn icon={<i className="fa-solid fa-comment" />} label="WhatsApp" disabled />
           </div>
 
           <div className="grid grid-cols-2 gap-2 px-5 py-4">
             <InfoCard
-              icon="🕐"
+              icon={<i className="fa-solid fa-clock" />}
               label="Laatste contact"
               value={contact.last_message_at ? `${getDaysSinceContact(contact.last_message_at)}d` : '—'}
               warn={contact.last_message_at && getDaysSinceContact(contact.last_message_at) > 14}
             />
             <InfoCard
-              icon="🎂"
+              icon={<i className="fa-solid fa-cake-candles" />}
               label="Verjaardag"
               value={contact.birthday
                 ? (() => {
@@ -75,12 +75,12 @@ export default function ContactDetail({ contactId, onClose, onOpenMessage, onSch
           </div>
 
           <div className="space-y-2 border-y border-gray-100 px-5 py-4 text-sm">
-            {contact.email ? <InfoRow icon="📧" value={contact.email} /> : null}
-            {contact.phone ? <InfoRow icon="📱" value={contact.phone} /> : null}
-            {contact.birthday ? <InfoRow icon="🎂" value={formatDateShort(`${contact.birthday}T00:00:00`)} /> : null}
+            {contact.email ? <InfoRow icon={<i className="fa-solid fa-envelope" />} value={contact.email} /> : null}
+            {contact.phone ? <InfoRow icon={<i className="fa-solid fa-mobile-screen" />} value={contact.phone} /> : null}
+            {contact.birthday ? <InfoRow icon={<i className="fa-solid fa-cake-candles" />} value={formatDateShort(`${contact.birthday}T00:00:00`)} /> : null}
             {contact.tags ? (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-gray-400">🏷️</span>
+                <span className="text-gray-400"><i className="fa-solid fa-tag" /></span>
                 {contact.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
                   <Badge key={t} bg="#eff6ff" color="#3b82f6">{t}</Badge>
                 ))}
@@ -88,7 +88,7 @@ export default function ContactDetail({ contactId, onClose, onOpenMessage, onSch
             ) : null}
             {contact.notes ? (
               <div className="mt-2 rounded-md bg-yellow-50 px-3 py-2 text-xs text-yellow-900">
-                📝 {contact.notes}
+                <i className="fa-solid fa-note-sticky mr-1" />{contact.notes}
               </div>
             ) : null}
           </div>

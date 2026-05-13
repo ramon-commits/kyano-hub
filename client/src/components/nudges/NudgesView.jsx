@@ -32,7 +32,7 @@ export default function NudgesView({ onOpenContact, onSchedule }) {
   const mute = async (c) => {
     try {
       await updateNudge.mutateAsync({ id: c.id, is_active: false });
-      toast.info(`Nudges voor ${c.name} uitgezet`, '🔇 Gemuted');
+      toast.info(`Nudges voor ${c.name} uitgezet`, 'Gemuted');
     } catch (e) {
       toast.error(e.message);
     }
@@ -41,7 +41,7 @@ export default function NudgesView({ onOpenContact, onSchedule }) {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="💡 Relationship Nudges"
+        title="Relationship Nudges"
         subtitle={`${nudges.length} ${nudges.length === 1 ? 'contact' : 'contacten'} wachten op een seintje`}
       >
         <div className="inline-flex flex-wrap gap-1.5">
@@ -69,7 +69,7 @@ export default function NudgesView({ onOpenContact, onSchedule }) {
           ) : nudges.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white">
               <EmptyState
-                icon="💡"
+                icon="lightbulb"
                 title="Alles onder controle"
                 description="Geen contacten die om een seintje vragen. Verlaag de drempel om eerder gewaarschuwd te worden."
               />
@@ -97,20 +97,20 @@ export default function NudgesView({ onOpenContact, onSchedule }) {
                         onClick={() => onSchedule?.(n)}
                         className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
                       >
-                        📅 Plan
+                        <i className="fa-solid fa-calendar-days mr-1.5" />Plan
                       </button>
                       <button
                         onClick={() => onOpenContact?.(n)}
                         className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
                       >
-                        💬 Bericht
+                        <i className="fa-solid fa-comment mr-1.5" />Bericht
                       </button>
                       <button
                         onClick={() => mute(n)}
                         title="Geen nudges meer voor dit contact"
                         className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700"
                       >
-                        🔇 Mute
+                        <i className="fa-solid fa-volume-xmark mr-1.5" />Mute
                       </button>
                     </div>
                   </div>

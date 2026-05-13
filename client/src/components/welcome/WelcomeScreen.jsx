@@ -13,7 +13,7 @@ export default function WelcomeScreen({ onGoToSettings }) {
         <div className="mb-8 space-y-2.5 text-left">
           <Step n={1} done>
             <strong className="text-sm text-gray-900">Open de hub</strong>
-            <div className="text-xs text-gray-500">Je staat hier nu ✨</div>
+            <div className="text-xs text-gray-500">Je staat hier nu <i className="fa-solid fa-wand-magic-sparkles" /></div>
           </Step>
           <Step n={2}>
             <strong className="text-sm text-gray-900">Verbind je eerste email account</strong>
@@ -33,7 +33,7 @@ export default function WelcomeScreen({ onGoToSettings }) {
           onClick={onGoToSettings}
           className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
         >
-          🔐 Verbind je eerste account
+          <i className="fa-solid fa-lock mr-1.5" />Verbind je eerste account
         </button>
       </div>
     </div>
@@ -48,7 +48,7 @@ function Step({ n, children, done }) {
           done ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
         }`}
       >
-        {done ? '✓' : n}
+        {done ? <i className="fa-solid fa-check" /> : n}
       </div>
       <div className="flex-1">{children}</div>
     </div>

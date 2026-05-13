@@ -41,12 +41,12 @@ export default function ContactenView({ onOpenContact }) {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="👥 Contacten"
+        title="Contacten"
         subtitle={`${contacts.length} ${contacts.length === 1 ? 'contact' : 'contacten'}`}
       >
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative flex-1">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><i className="fa-solid fa-magnifying-glass" /></span>
             <input
               type="text"
               value={search}
@@ -79,7 +79,7 @@ export default function ContactenView({ onOpenContact }) {
           ) : contacts.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white">
               <EmptyState
-                icon="🧑‍🤝‍🧑"
+                icon="handshake"
                 title={search ? 'Geen resultaten' : 'Nog geen contacten'}
                 description={search ? 'Probeer een andere zoekterm.' : 'Contacten verschijnen hier zodra je berichten gaat ontvangen.'}
               />
@@ -120,10 +120,10 @@ function ContactCard({ contact, onClick }) {
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           {contact.open_count > 0 ? (
-            <Badge color="#3b82f6" bg="#eff6ff">📬 {contact.open_count} open</Badge>
+            <Badge color="#3b82f6" bg="#eff6ff"><i className="fa-solid fa-inbox mr-1" />{contact.open_count} open</Badge>
           ) : null}
           {contact.message_count > 0 ? (
-            <Badge color="#374151" bg="#f3f4f6">💬 {contact.message_count}</Badge>
+            <Badge color="#374151" bg="#f3f4f6"><i className="fa-solid fa-comment mr-1" />{contact.message_count}</Badge>
           ) : null}
         </div>
 

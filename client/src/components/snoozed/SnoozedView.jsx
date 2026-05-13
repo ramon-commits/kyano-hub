@@ -73,7 +73,7 @@ export default function SnoozedView({ onOpenMessage, onReopen, onDone, onSnooze,
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="⏰ Snoozed"
+        title="Snoozed"
         subtitle={`${total} bericht${total === 1 ? '' : 'en'} wachten op terugkomst`}
       >
         <MessageFilters
@@ -91,7 +91,7 @@ export default function SnoozedView({ onOpenMessage, onReopen, onDone, onSnooze,
           ) : total === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white">
               <EmptyState
-                icon="😌"
+                icon="face-smile"
                 title="Geen snoozed berichten"
                 description="Snooze een bericht uit je inbox om het later terug te laten komen."
               />

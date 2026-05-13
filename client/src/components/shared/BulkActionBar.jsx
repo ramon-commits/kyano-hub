@@ -15,10 +15,10 @@ export default function BulkActionBar({ count, onSnooze, onDone, onArchive, onBl
           geselecteerd
         </span>
 
-        <BulkBtn onClick={onSnooze} disabled={busy} title="Snooze alle (S)">⏰ Snooze</BulkBtn>
-        <BulkBtn onClick={onDone} disabled={busy} title="Markeer alle afgehandeld (E)">✅ Done</BulkBtn>
-        <BulkBtn onClick={onArchive} disabled={busy} title="Archiveer alle (#)">🗑️ Archiveer</BulkBtn>
-        <BulkBtn onClick={onBlock} disabled={busy} title="Blokkeer alle afzenders">🚫 Blokkeer</BulkBtn>
+        <BulkBtn onClick={onSnooze} disabled={busy} title="Snooze alle (S)"><i className="fa-solid fa-clock mr-1.5" />Snooze</BulkBtn>
+        <BulkBtn onClick={onDone} disabled={busy} title="Markeer alle afgehandeld (E)"><i className="fa-solid fa-circle-check mr-1.5" />Done</BulkBtn>
+        <BulkBtn onClick={onArchive} disabled={busy} title="Archiveer alle (#)"><i className="fa-solid fa-trash mr-1.5" />Archiveer</BulkBtn>
+        <BulkBtn onClick={onBlock} disabled={busy} title="Blokkeer alle afzenders"><i className="fa-solid fa-ban mr-1.5" />Blokkeer</BulkBtn>
 
         <span className="mx-1 h-5 w-px bg-white/20" />
 
@@ -28,7 +28,7 @@ export default function BulkActionBar({ count, onSnooze, onDone, onArchive, onBl
           title="Deselecteer (Esc)"
           className="rounded-md px-2 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
         >
-          ✕ Annuleer
+          <i className="fa-solid fa-xmark mr-1.5" />Annuleer
         </button>
       </div>
     </div>

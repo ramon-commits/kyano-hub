@@ -55,11 +55,11 @@ export default function ConversationView({
         cc: cc || null,
         bcc: bcc || null,
       });
-      toast.success(`Verzonden via ${result.from || m.channel_account || m.channel_label}`, '📤 Verstuurd');
+      toast.success(`Verzonden via ${result.from || m.channel_account || m.channel_label}`, 'Verstuurd');
       return true;
     } catch (e) {
       if (e.status === 401 || e.data?.needs_reconnect) {
-        toast.error('Account moet opnieuw verbonden worden (token verlopen)', '🔐 Herconnectie nodig');
+        toast.error('Account moet opnieuw verbonden worden (token verlopen)', 'Herconnectie nodig');
       } else if (e.status === 400) {
         toast.error(e.message);
       } else {
@@ -70,7 +70,7 @@ export default function ConversationView({
   };
 
   const handleCopy = (ok) => {
-    if (ok) toast.success('Tekst staat op je klembord', '📋 Gekopieerd');
+    if (ok) toast.success('Tekst staat op je klembord', 'Gekopieerd');
     else toast.error('Kon niet kopiëren');
   };
 
@@ -104,7 +104,7 @@ export default function ConversationView({
           ) : null}
           {isGroupChat ? (
             <div className="mt-0.5 truncate text-xs text-gray-500">
-              👥 Groepschat · {participantCount} deelnemers
+              <i className="fa-solid fa-users mr-1" />Groepschat · {participantCount} deelnemers
             </div>
           ) : (m.contact_company || m.contact_email) ? (
             <div className="mt-0.5 truncate text-xs text-gray-500">

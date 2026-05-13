@@ -100,7 +100,7 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
               Verzenden…
             </span>
           ) : (
-            <>📤 Verstuur</>
+            <><i className="fa-solid fa-paper-plane mr-1.5" />Verstuur</>
           )}
         </button>
         <button
@@ -108,14 +108,14 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
           disabled={!text.trim() || sending}
           className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          📋 Kopieer
+          <i className="fa-solid fa-clipboard-list mr-1.5" />Kopieer
         </button>
         <button
           onClick={onAI}
           disabled={sending}
           className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-100 disabled:opacity-50"
         >
-          🤖 AI varianten
+          <i className="fa-solid fa-robot mr-1.5" />AI varianten
         </button>
 
         <span className="mx-1 hidden h-6 w-px self-center bg-gray-200 sm:inline-block" />
@@ -126,7 +126,7 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
           title="Verbeter de Nederlandse schrijfstijl (stap 12)"
         >
-          ✍️ Verbeter NL
+          <i className="fa-solid fa-pen-to-square mr-1.5" />Verbeter NL
         </button>
         <button
           onClick={onTranslate}
@@ -134,7 +134,7 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
           title="Vertaal naar andere taal (stap 12)"
         >
-          🌍 Vertaal
+          <i className="fa-solid fa-earth-europe mr-1.5" />Vertaal
         </button>
         <button
           onClick={onFollowUp}
@@ -142,7 +142,7 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
           title="Schrijf een follow-up suggestie (stap 12)"
         >
-          ↩️ Follow-up
+          <i className="fa-solid fa-reply mr-1.5" />Follow-up
         </button>
 
         {text.trim() ? (

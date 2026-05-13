@@ -30,7 +30,7 @@ export default function DoneModal({ open, onClose, onDone, contactName }) {
           onClick={submit}
           className="w-full rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700"
         >
-          ✅ Markeer als afgehandeld
+          <i className="fa-solid fa-circle-check mr-1.5" />Markeer als afgehandeld
         </button>
       }
     >
@@ -50,7 +50,7 @@ export default function DoneModal({ open, onClose, onDone, contactName }) {
                     : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50',
                 )}
               >
-                <span className="text-lg leading-none">{c.icon}</span>
+                <i className={`fa-solid fa-${c.icon} text-lg leading-none`} />
                 <span className="font-medium">{c.label}</span>
               </button>
             );

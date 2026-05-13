@@ -5,9 +5,9 @@ import PageHeader from '../shared/PageHeader.jsx';
 import { cn } from '../../lib/utils.js';
 
 const TABS = [
-  { id: 'channels', label: 'Kanalen', icon: '📡' },
-  { id: 'style', label: 'Stijl', icon: '🎨' },
-  { id: 'account', label: 'Account', icon: '👤' },
+  { id: 'channels', label: 'Kanalen', icon: 'tower-broadcast' },
+  { id: 'style', label: 'Stijl', icon: 'palette' },
+  { id: 'account', label: 'Account', icon: 'user' },
 ];
 
 export default function InstellingenView() {
@@ -15,7 +15,7 @@ export default function InstellingenView() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="⚙️ Instellingen" subtitle="Beheer kanalen, stijl, en je account">
+      <PageHeader title="Instellingen" subtitle="Beheer kanalen, stijl, en je account">
         <div className="inline-flex gap-1.5">
           {TABS.map((t) => (
             <button
@@ -28,7 +28,7 @@ export default function InstellingenView() {
                   : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50',
               )}
             >
-              <span>{t.icon}</span>{t.label}
+              <i className={`fa-solid fa-${t.icon}`} />{t.label}
             </button>
           ))}
         </div>
@@ -46,7 +46,7 @@ export default function InstellingenView() {
           ) : null}
           {tab === 'style' ? (
             <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-6 text-sm text-amber-900">
-              🎨 Stijlprofiel wordt gebouwd in stap 11. Hier komen je communicatie-DNA, signatures, en per-kanaal toon.
+              <i className="fa-solid fa-palette mr-1.5" />Stijlprofiel wordt gebouwd in stap 11. Hier komen je communicatie-DNA, signatures, en per-kanaal toon.
             </div>
           ) : null}
           {tab === 'account' ? (

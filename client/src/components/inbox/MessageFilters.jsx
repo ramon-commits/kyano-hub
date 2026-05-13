@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { cn, debounce } from '../../lib/utils.js';
 
 const FILTERS = [
-  { id: 'all', label: 'Alle', icon: '📥' },
-  { id: 'email', label: 'Email', icon: '✉️' },
-  { id: 'whatsapp', label: 'WhatsApp', icon: '💬' },
-  { id: 'linkedin', label: 'LinkedIn', icon: '💼' },
+  { id: 'all', label: 'Alle', icon: 'inbox', brand: false },
+  { id: 'email', label: 'Email', icon: 'envelope', brand: false },
+  { id: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', brand: true },
+  { id: 'linkedin', label: 'LinkedIn', icon: 'linkedin', brand: true },
 ];
 
 export default function MessageFilters({ channelFilter, onChannelFilter, search, onSearch, extra }) {
@@ -32,14 +32,14 @@ export default function MessageFilters({ channelFilter, onChannelFilter, search,
                 : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50',
             )}
           >
-            <span className="leading-none">{f.icon}</span>
+            <i className={`${f.brand ? 'fa-brands' : 'fa-solid'} fa-${f.icon} leading-none`} />
             {f.label}
           </button>
         ))}
       </div>
 
       <div className="relative flex-1">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><i className="fa-solid fa-magnifying-glass" /></span>
         <input
           type="text"
           value={local}

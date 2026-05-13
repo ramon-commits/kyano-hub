@@ -70,7 +70,7 @@ export default function UnipileSettings() {
       <div className="space-y-3 rounded-xl border border-green-200 bg-green-50 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h4 className="text-sm font-semibold text-green-900">✅ Unipile verbonden</h4>
+            <h4 className="text-sm font-semibold text-green-900"><i className="fa-solid fa-circle-check mr-1.5" />Unipile verbonden</h4>
             <p className="mt-0.5 text-xs text-green-700">DSN: <code>{status.dsn}</code></p>
           </div>
           <button onClick={disconnect} className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">
@@ -84,7 +84,7 @@ export default function UnipileSettings() {
               <div key={a.unipile_account_id || a.id} className="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2 text-sm">
                 <span className="font-medium">{(a.type || '').toUpperCase()}</span>
                 {a.ok === false ? (
-                  <Badge color="#dc2626" bg="#fef2f2">⚠️ {a.error || a.reason}</Badge>
+                  <Badge color="#dc2626" bg="#fef2f2"><i className="fa-solid fa-triangle-exclamation mr-1" />{a.error || a.reason}</Badge>
                 ) : (
                   <Badge color="#16a34a" bg="#f0fdf4">{a.inserted ?? 0} nieuwe</Badge>
                 )}
@@ -97,14 +97,14 @@ export default function UnipileSettings() {
             onClick={refresh}
             className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
           >
-            🔄 Sync nu
+            <i className="fa-solid fa-arrows-rotate mr-1.5" />Sync nu
           </button>
           <button
             onClick={async () => {
               if (!confirm('Alle WhatsApp/LinkedIn/Instagram berichten worden verwijderd en opnieuw opgehaald met de nieuwe namen-extractie. Doorgaan?')) return;
               try {
                 const r = await api.post('/admin/resync-unipile');
-                toast.success(`${r.deleted_messages} berichten gewist + ${r.resync?.total_new || 0} opnieuw gesynced`, '🔁 Reset compleet');
+                toast.success(`${r.deleted_messages} berichten gewist + ${r.resync?.total_new || 0} opnieuw gesynced`, 'Reset compleet');
                 qc.invalidateQueries({ queryKey: ['messages'] });
                 qc.invalidateQueries({ queryKey: ['stats'] });
                 qc.invalidateQueries({ queryKey: ['channels'] });
@@ -114,7 +114,7 @@ export default function UnipileSettings() {
             className="rounded-md border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50"
             title="Wist alle Unipile berichten en haalt ze opnieuw op met verbeterde namen/sender extractie"
           >
-            🔁 Reset & resync (na namen-fix)
+            <i className="fa-solid fa-arrows-rotate mr-1.5" />Reset & resync (na namen-fix)
           </button>
         </div>
       </div>
@@ -123,7 +123,7 @@ export default function UnipileSettings() {
 
   return (
     <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/50 p-5">
-      <h4 className="text-sm font-semibold text-blue-900">📱 WhatsApp, Instagram & LinkedIn koppelen via Unipile</h4>
+      <h4 className="text-sm font-semibold text-blue-900"><i className="fa-solid fa-mobile-screen mr-1.5" />WhatsApp, Instagram & LinkedIn koppelen via Unipile</h4>
       <ol className="ml-5 list-decimal space-y-1 text-xs text-blue-800">
         <li>Ga naar <a className="underline" href="https://unipile.com" target="_blank" rel="noopener noreferrer">unipile.com</a> en maak een account aan (7 dagen gratis trial)</li>
         <li>Koppel WhatsApp / Instagram / LinkedIn via QR-code in het Unipile dashboard</li>
@@ -156,7 +156,7 @@ export default function UnipileSettings() {
           disabled={busy}
           className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          {busy ? 'Valideren…' : '🔐 Opslaan en accounts ophalen'}
+          {busy ? 'Valideren…' : (<><i className="fa-solid fa-lock mr-1.5" />Opslaan en accounts ophalen</>)}
         </button>
       </div>
     </div>

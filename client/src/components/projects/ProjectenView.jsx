@@ -9,12 +9,12 @@ const COLUMNS = [
 export default function ProjectenView() {
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="🗂️ Projecten" subtitle="Tag berichten en contacten met projecten" />
+      <PageHeader title="Projecten" subtitle="Tag berichten en contacten met projecten" />
 
       <div className="flex-1 overflow-auto bg-gray-50 scrollbar-thin">
         <div className="mx-8 my-6 space-y-4">
           <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            ℹ️ Projecten worden gebouwd in een latere stap. Tag berichten met projecten bij het afhandelen om ze hier te zien.
+            <i className="fa-solid fa-circle-info mr-1.5" />Projecten worden gebouwd in een latere stap. Tag berichten met projecten bij het afhandelen om ze hier te zien.
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

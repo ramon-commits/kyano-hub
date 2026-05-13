@@ -51,7 +51,7 @@ export default function LogboekView({ onOpenMessage, onReopen, selectedId }) {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="📋 Logboek"
+        title="Logboek"
         subtitle={`${messages.length} afgehandelde bericht${messages.length === 1 ? '' : 'en'}`}
         actions={
           <a
@@ -59,7 +59,7 @@ export default function LogboekView({ onOpenMessage, onReopen, selectedId }) {
             download
             className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:shadow-md"
           >
-            📥 Exporteer CSV
+            <i className="fa-solid fa-inbox" />Exporteer CSV
           </a>
         }
       >
@@ -84,7 +84,7 @@ export default function LogboekView({ onOpenMessage, onReopen, selectedId }) {
                   activeBg={style.activeBg}
                   onClick={() => setCategory(c.value)}
                 >
-                  {c.icon} {c.label}
+                  <i className={`fa-solid fa-${c.icon} mr-1`} />{c.label}
                 </CategoryChip>
               );
             })}
@@ -99,7 +99,7 @@ export default function LogboekView({ onOpenMessage, onReopen, selectedId }) {
           ) : messages.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white">
               <EmptyState
-                icon="📭"
+                icon="inbox"
                 title={search || category !== 'all' ? 'Geen matches' : 'Logboek is leeg'}
                 description={search || category !== 'all'
                   ? 'Probeer een andere zoekterm of categorie.'

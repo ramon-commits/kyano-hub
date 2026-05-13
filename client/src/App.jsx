@@ -29,8 +29,8 @@ import { NAV_ITEMS } from './lib/constants.js';
 function HealthBadge() {
   const { data, isError, isLoading } = useHealth();
   if (isLoading) return <Badge dot="bg-gray-400" label="Verbinden…" />;
-  if (isError || !data) return <Badge dot="bg-red-500" label="Disconnected ❌" />;
-  return <Badge dot="bg-green-500" label={`Connected ✅ · ${data.messages ?? 0} msg · ${data.contacts ?? 0} contacten`} />;
+  if (isError || !data) return <Badge dot="bg-red-500" label="Disconnected" />;
+  return <Badge dot="bg-green-500" label={`Connected · ${data.messages ?? 0} msg · ${data.contacts ?? 0} contacten`} />;
 }
 
 function Badge({ label, dot }) {
@@ -84,10 +84,10 @@ export default function App() {
     try {
       if (bulkIds && bulkIds.length) {
         const r = await bulkSnoozeMut.mutateAsync({ ids: bulkIds, snoozed_until: snoozedUntilISO });
-        toast.success(`${r.updated} berichten komen terug ${label}`, '⏰ Snoozed');
+        toast.success(`${r.updated} berichten komen terug ${label}`, 'Snoozed');
       } else if (msg) {
         await snoozeMut.mutateAsync({ id: msg.id, snoozed_until: snoozedUntilISO });
-        toast.success(`Komt terug ${label}`, '⏰ Snoozed');
+        toast.success(`Komt terug ${label}`, 'Snoozed');
         if (selectedMessageId === msg.id) setSelectedMessageId(null);
       }
     } catch (e) {
@@ -101,7 +101,7 @@ export default function App() {
     setSnoozeModal({ open: false, message: null, bulkIds: null });
     try {
       await waitingMut.mutateAsync({ id: msg.id });
-      toast.info('Status: wacht op reactie', '⏳ Bewaard');
+      toast.info('Status: wacht op reactie', 'Bewaard');
       if (selectedMessageId === msg.id) setSelectedMessageId(null);
     } catch (e) {
       toast.error(e.message);
@@ -114,10 +114,10 @@ export default function App() {
     try {
       if (bulkIds && bulkIds.length) {
         const r = await bulkDoneMut.mutateAsync({ ids: bulkIds, note, category });
-        toast.success(`${r.updated} berichten in je logboek`, '✅ Afgehandeld');
+        toast.success(`${r.updated} berichten in je logboek`, 'Afgehandeld');
       } else if (msg) {
         await doneMut.mutateAsync({ id: msg.id, category, note });
-        toast.success('Staat in je logboek', '✅ Afgehandeld');
+        toast.success('Staat in je logboek', 'Afgehandeld');
         if (selectedMessageId === msg.id) setSelectedMessageId(null);
       }
     } catch (e) {
@@ -129,7 +129,7 @@ export default function App() {
     if (!ids?.length) return false;
     try {
       const r = await bulkArchiveMut.mutateAsync({ ids });
-      toast.info(`${r.archived} berichten naar archief`, '🗑️ Gearchiveerd');
+      toast.info(`${r.archived} berichten naar archief`, 'Gearchiveerd');
       if (selectedMessageId && ids.includes(selectedMessageId)) setSelectedMessageId(null);
       return true;
     } catch (e) {
@@ -141,7 +141,7 @@ export default function App() {
   const onReopen = async (m) => {
     try {
       await reopenMut.mutateAsync({ id: m.id });
-      toast.info('Terug in inbox', '↩ Heropend');
+      toast.info('Terug in inbox', 'Heropend');
     } catch (e) {
       toast.error(e.message);
     }
@@ -150,7 +150,7 @@ export default function App() {
   const onArchive = async (m) => {
     try {
       await archiveMut.mutateAsync({ id: m.id });
-      toast.info('Naar archief', '🗑️ Gearchiveerd');
+      toast.info('Naar archief', 'Gearchiveerd');
       if (selectedMessageId === m.id) setSelectedMessageId(null);
     } catch (e) {
       toast.error(e.message);
@@ -161,18 +161,18 @@ export default function App() {
     const newPrio = m.priority === 'high' ? 'medium' : 'high';
     try {
       await priorityMut.mutateAsync({ id: m.id, priority: newPrio });
-      toast.info(newPrio === 'high' ? 'Gemarkeerd als urgent' : 'Urgent verwijderd', '🔴 Prioriteit');
+      toast.info(newPrio === 'high' ? 'Gemarkeerd als urgent' : 'Urgent verwijderd', 'Prioriteit');
     } catch (e) {
       toast.error(e.message);
     }
   };
 
   const onAIPlaceholder = () => {
-    toast.info('AI varianten worden gebouwd in stap 12 (AI integratie)', '🤖 Komt eraan');
+    toast.info('AI varianten worden gebouwd in stap 12 (AI integratie)', 'Komt eraan');
   };
-  const onImproveNL = () => toast.info('✍️ NL verbeteren wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
-  const onTranslate = () => toast.info('🌍 Vertalen wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
-  const onFollowUp = () => toast.info('↩️ Follow-up wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
+  const onImproveNL = () => toast.info('NL verbeteren wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
+  const onTranslate = () => toast.info('Vertalen wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
+  const onFollowUp = () => toast.info('Follow-up wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
 
   const qc = useQueryClient();
   const onBlock = async (m) => {
@@ -182,7 +182,7 @@ export default function App() {
     const pattern = useDomain ? m.contact_email : (domain ? '@' + domain : m.contact_email);
     try {
       await api.post('/settings/sender-rules', { email_pattern: pattern, rule: 'block' });
-      toast.success(`${pattern} geblokkeerd — je ziet nooit meer berichten van dit ${useDomain ? 'adres' : 'domein'}`, '🚫 Geblokkeerd');
+      toast.success(`${pattern} geblokkeerd — je ziet nooit meer berichten van dit ${useDomain ? 'adres' : 'domein'}`, 'Geblokkeerd');
       qc.invalidateQueries({ queryKey: ['messages'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
       if (selectedMessageId === m.id) setSelectedMessageId(null);
@@ -207,9 +207,9 @@ export default function App() {
       qc.invalidateQueries({ queryKey: ['messages'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
       if (failed) {
-        toast.warning(`${emails.length - failed}/${emails.length} afzenders geblokkeerd — ${failed} fout(en)`, '🚫 Deels geblokkeerd');
+        toast.warning(`${emails.length - failed}/${emails.length} afzenders geblokkeerd — ${failed} fout(en)`, 'Deels geblokkeerd');
       } else {
-        toast.success(`${emails.length} afzender${emails.length === 1 ? '' : 's'} geblokkeerd + ${ids.length} bericht${ids.length === 1 ? '' : 'en'} gearchiveerd`, '🚫 Geblokkeerd');
+        toast.success(`${emails.length} afzender${emails.length === 1 ? '' : 's'} geblokkeerd + ${ids.length} bericht${ids.length === 1 ? '' : 'en'} gearchiveerd`, 'Geblokkeerd');
       }
       if (selectedMessageId && ids.includes(selectedMessageId)) setSelectedMessageId(null);
       return true;
@@ -248,7 +248,13 @@ export default function App() {
   // View routing
   const headerTitle = useMemo(() => {
     const item = NAV_ITEMS.find((n) => n.id === view);
-    return item ? `${item.icon} ${item.label}` : 'Comm Hub';
+    if (!item) return 'Comm Hub';
+    return (
+      <span className="inline-flex items-center gap-2">
+        <i className={`fa-solid fa-${item.icon}`} />
+        {item.label}
+      </span>
+    );
   }, [view]);
 
   const renderMain = () => {
@@ -317,9 +323,9 @@ export default function App() {
       case 'projecten':
         return <ProjectenView />;
       case 'analytics':
-        return <PlaceholderView title="📊 Analytics" hint="Insights dashboard volgt in een latere stap." />;
+        return <PlaceholderView title="Analytics" hint="Insights dashboard volgt in een latere stap." />;
       case 'vraag':
-        return <PlaceholderView title="💬 Vraag aan AI" hint="Claude chat-interface volgt in stap 11." />;
+        return <PlaceholderView title="Vraag aan AI" hint="Claude chat-interface volgt in stap 11." />;
       case 'instellingen':
         return <InstellingenView />;
       default:

@@ -15,7 +15,16 @@ export function ToastProvider({ children }) {
 
   const show = useCallback((opts) => {
     const id = ++counter.current;
-    const t = { id, type: opts.type || 'info', title: opts.title, message: opts.message || opts, duration: opts.duration ?? 3000 };
+    // If an action is provided, default duration to 5s (so users have time to click Undo)
+    const defaultDuration = opts.action ? 5000 : 3000;
+    const t = {
+      id,
+      type: opts.type || 'info',
+      title: opts.title,
+      message: opts.message || opts,
+      duration: opts.duration ?? defaultDuration,
+      action: opts.action || null,
+    };
     setToasts((cur) => [...cur.slice(-(MAX - 1)), t]);
     if (t.duration > 0) {
       setTimeout(() => dismiss(id), t.duration);
@@ -23,12 +32,15 @@ export function ToastProvider({ children }) {
     return id;
   }, [dismiss]);
 
+  // Helper that accepts either (msg, title) for backwards compat or (msg, title, { action, duration })
+  const make = (type) => (msg, title, opts) => show({ type, message: msg, title, ...(opts || {}) });
+
   const api = {
     show,
-    success: (msg, title) => show({ type: 'success', message: msg, title }),
-    error: (msg, title) => show({ type: 'error', message: msg, title }),
-    info: (msg, title) => show({ type: 'info', message: msg, title }),
-    warning: (msg, title) => show({ type: 'warning', message: msg, title }),
+    success: make('success'),
+    error: make('error'),
+    info: make('info'),
+    warning: make('warning'),
     dismiss,
   };
 

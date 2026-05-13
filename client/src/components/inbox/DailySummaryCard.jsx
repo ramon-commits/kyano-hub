@@ -55,7 +55,7 @@ export default function DailySummaryCard({ onOpenContact }) {
             {urgent > 0 ? <>, waarvan <span className="font-semibold text-red-700">{urgent} urgent</span></> : null}.
           </>
         ) : (
-          <>Geen openstaande berichten. Tijd voor koffie. ☕</>
+          <>Geen openstaande berichten. Tijd voor koffie. <i className="fa-solid fa-mug-hot" /></>
         )}
       </p>
 
@@ -63,19 +63,19 @@ export default function DailySummaryCard({ onOpenContact }) {
         {today.map((c) => (
           <Chip key={c.id} onClick={() => onOpenContact?.(c)} kind="birthday">
             <Avatar name={c.name} initials={c.avatar_initials} color={c.avatar_color} size="xs" />
-            🎂 <strong>{c.name}</strong> is vandaag jarig
+            <i className="fa-solid fa-cake-candles" /> <strong>{c.name}</strong> is vandaag jarig
           </Chip>
         ))}
         {week.map((c) => (
           <Chip key={c.id} onClick={() => onOpenContact?.(c)} kind="birthday-week">
             <Avatar name={c.name} initials={c.avatar_initials} color={c.avatar_color} size="xs" />
-            🎂 {c.name} <span className="opacity-60">over {c.days_until}d</span>
+            <i className="fa-solid fa-cake-candles" /> {c.name} <span className="opacity-60">over {c.days_until}d</span>
           </Chip>
         ))}
         {nudges.map((c) => (
           <Chip key={c.id} onClick={() => onOpenContact?.(c)} kind="nudge">
             <Avatar name={c.name} initials={c.avatar_initials} color={c.avatar_color} size="xs" />
-            💡 {c.name} <span className="opacity-60">— {c.days_since}d stil</span>
+            <i className="fa-solid fa-lightbulb" /> {c.name} <span className="opacity-60">— {c.days_since}d stil</span>
           </Chip>
         ))}
       </div>

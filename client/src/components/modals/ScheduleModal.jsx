@@ -54,7 +54,7 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
         description: description || null,
         location: location || null,
       });
-      toast.success(`Afspraak toegevoegd op ${date} ${time}`, '📅 Gepland');
+      toast.success(`Afspraak toegevoegd op ${date} ${time}`, 'Gepland');
       onClose?.();
     } catch (e) {
       toast.error(e.message || 'Calendar create faalde');
@@ -78,7 +78,7 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
             disabled={createEvent.isPending || !channel}
             className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            {createEvent.isPending ? 'Toevoegen…' : '📅 Toevoegen aan Calendar'}
+            {createEvent.isPending ? 'Toevoegen…' : (<><i className="fa-solid fa-calendar-days mr-1.5" />Toevoegen aan Calendar</>)}
           </button>
         </>
       }
@@ -86,7 +86,7 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
       <div className="space-y-4 p-6">
         {emailChannels.length === 0 ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-            ⚠️ Geen verbonden Calendar accounts. Verbind eerst een Gmail account in Instellingen.
+            <i className="fa-solid fa-triangle-exclamation mr-1.5" />Geen verbonden Calendar accounts. Verbind eerst een Gmail account in Instellingen.
           </div>
         ) : null}
 

@@ -30,7 +30,7 @@ export default function ChannelsSettings() {
 
   const connect = (channelId) => {
     window.open(`/api/auth/gmail/connect/${channelId}`, 'oauth', 'width=600,height=720');
-    toast.info('Maak de Google consent flow af in het nieuwe venster', '🔐 Verbinden');
+    toast.info('Maak de Google consent flow af in het nieuwe venster', 'Verbinden');
     setTimeout(() => {
       qc.invalidateQueries({ queryKey: ['auth-status'] });
       qc.invalidateQueries({ queryKey: ['channels'] });
@@ -55,11 +55,11 @@ export default function ChannelsSettings() {
         toast.error(r.error || 'Sync mislukt');
       } else {
         const n = r.inserted ?? 0;
-        toast.success(`Sync klaar — ${n} nieuwe bericht${n === 1 ? '' : 'en'}`, '🔄 Sync');
+        toast.success(`Sync klaar — ${n} nieuwe bericht${n === 1 ? '' : 'en'}`, 'Sync');
       }
     } catch (e) {
       if (e.status === 401 || e.data?.needs_reconnect) {
-        toast.error('Token verlopen — verbind opnieuw', '🔐 Herconnectie nodig');
+        toast.error('Token verlopen — verbind opnieuw', 'Herconnectie nodig');
       } else {
         toast.error(e.message);
       }
@@ -108,16 +108,16 @@ export default function ChannelsSettings() {
                 {c.message_count > 0 ? <> · {c.message_count} berichten ({c.open_count || 0} open)</> : null}
               </div>
               {hasError ? (
-                <div className="mt-1 text-[11px] font-medium text-amber-700">⚠️ {c.error_message}</div>
+                <div className="mt-1 text-[11px] font-medium text-amber-700"><i className="fa-solid fa-triangle-exclamation mr-1" />{c.error_message}</div>
               ) : null}
             </div>
 
             {hasError ? (
-              <Badge color="#a16207" bg="#fef3c7">⚠️ Herconnectie nodig</Badge>
+              <Badge color="#a16207" bg="#fef3c7"><i className="fa-solid fa-triangle-exclamation mr-1" />Herconnectie nodig</Badge>
             ) : connected ? (
-              <Badge color="#16a34a" bg="#dcfce7">✅ Verbonden</Badge>
+              <Badge color="#16a34a" bg="#dcfce7"><i className="fa-solid fa-circle-check mr-1" />Verbonden</Badge>
             ) : (
-              <Badge color="#dc2626" bg="#fef2f2">❌ Niet verbonden</Badge>
+              <Badge color="#dc2626" bg="#fef2f2"><i className="fa-solid fa-circle-xmark mr-1" />Niet verbonden</Badge>
             )}
 
             <div className="flex flex-wrap gap-1.5">
@@ -126,7 +126,7 @@ export default function ChannelsSettings() {
                   onClick={() => connect(c.id)}
                   className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
                 >
-                  🔐 Verbinden
+                  <i className="fa-solid fa-lock mr-1.5" />Verbinden
                 </button>
               ) : null}
               {hasError ? (
@@ -134,7 +134,7 @@ export default function ChannelsSettings() {
                   onClick={() => connect(c.id)}
                   className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-amber-700"
                 >
-                  🔄 Herverbinden
+                  <i className="fa-solid fa-arrows-rotate mr-1.5" />Herverbinden
                 </button>
               ) : null}
               {connected ? (
@@ -144,7 +144,7 @@ export default function ChannelsSettings() {
                     disabled={syncMut.isPending}
                     className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
                   >
-                    {syncMut.isPending && syncMut.variables === c.id ? '⏳ Sync…' : '🔄 Sync nu'}
+                    {syncMut.isPending && syncMut.variables === c.id ? (<><i className="fa-solid fa-hourglass-half mr-1.5" />Sync…</>) : (<><i className="fa-solid fa-arrows-rotate mr-1.5" />Sync nu</>)}
                   </button>
                   <button
                     onClick={() => setConfirmDisconnect({ id: c.id, label: c.label })}

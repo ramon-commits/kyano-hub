@@ -42,7 +42,7 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" showLabel={false} />
           {m.priority === 'high' ? <PriorityBadge priority="high" size="xs" /> : null}
           {m.status === 'waiting' ? (
-            <Badge color="#a16207" bg="#fef3c7" size="xs">⏳ Wacht op reactie</Badge>
+            <Badge color="#a16207" bg="#fef3c7" size="xs"><i className="fa-solid fa-hourglass-half mr-1" />Wacht op reactie</Badge>
           ) : null}
         </div>
 
@@ -57,13 +57,13 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
 
         {showWakeUp && m.snoozed_until ? (
           <div className="mt-1 text-[11px] text-orange-700">
-            ⏰ Komt terug: <strong>{formatDateShort(parseDateSafe(m.snoozed_until))} {formatTime(parseDateSafe(m.snoozed_until))}</strong>
+            <i className="fa-solid fa-clock mr-1" />Komt terug: <strong>{formatDateShort(parseDateSafe(m.snoozed_until))} {formatTime(parseDateSafe(m.snoozed_until))}</strong>
           </div>
         ) : null}
 
         {showDoneInfo && m.done_at ? (
           <div className="mt-1 flex items-center gap-2 text-[11px]">
-            <Badge color="#16a34a" bg="#dcfce7" size="xs">✅ {m.done_category || 'afgehandeld'}</Badge>
+            <Badge color="#16a34a" bg="#dcfce7" size="xs"><i className="fa-solid fa-circle-check mr-1" />{m.done_category || 'afgehandeld'}</Badge>
             {m.done_note ? <span className="italic text-gray-600">&ldquo;{m.done_note}&rdquo;</span> : null}
           </div>
         ) : null}
@@ -75,32 +75,32 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
         <div className="hidden items-center gap-0.5 group-hover:flex">
           {onSnooze ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onSnooze(m); }} title="Snooze" hoverColor="hover:bg-orange-50 hover:text-orange-700">
-              ⏰
+              <i className="fa-solid fa-clock" />
             </ActionBtn>
           ) : null}
           {onDone ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onDone(m); }} title="Afhandelen" hoverColor="hover:bg-green-50 hover:text-green-700">
-              ✅
+              <i className="fa-solid fa-circle-check" />
             </ActionBtn>
           ) : null}
           {onSchedule ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onSchedule(m); }} title="Plan afspraak" hoverColor="hover:bg-blue-50 hover:text-blue-700">
-              📅
+              <i className="fa-solid fa-calendar-days" />
             </ActionBtn>
           ) : null}
           {onReopen ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onReopen(m); }} title="Terug naar inbox" hoverColor="hover:bg-blue-50 hover:text-blue-700">
-              ↩
+              <i className="fa-solid fa-reply" />
             </ActionBtn>
           ) : null}
           {onArchive ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onArchive(m); }} title="Archiveer" hoverColor="hover:bg-gray-200 hover:text-gray-900">
-              🗑️
+              <i className="fa-solid fa-trash" />
             </ActionBtn>
           ) : null}
           {onBlock && m.contact_email ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onBlock(m); }} title="Blokkeer afzender" hoverColor="hover:bg-red-50 hover:text-red-700">
-              🚫
+              <i className="fa-solid fa-ban" />
             </ActionBtn>
           ) : null}
         </div>

@@ -60,7 +60,7 @@ export default function CalendarView({ onScheduleNew }) {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="📅 Calendar"
+        title="Calendar"
         subtitle={`${formatDateShort(weekStart)} t/m ${formatDateShort(new Date(weekEnd.getTime() - 86400000))}`}
         actions={
           <>
@@ -95,12 +95,12 @@ export default function CalendarView({ onScheduleNew }) {
             <div className="rounded-xl border border-gray-200 bg-white py-12"><LoadingSpinner label="Calendar laden…" /></div>
           ) : isError ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              ⚠️ Calendar sync mislukt: {error?.message || 'Onbekende fout'}. Controleer of je Gmail-account verbonden is in Instellingen.
+              <i className="fa-solid fa-triangle-exclamation mr-1.5" />Calendar sync mislukt: {error?.message || 'Onbekende fout'}. Controleer of je Gmail-account verbonden is in Instellingen.
             </div>
           ) : events.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white">
               <EmptyState
-                icon="📆"
+                icon="calendar"
                 title="Geen afspraken deze week"
                 description="Geen events gevonden in de gekoppelde calendars."
               />
@@ -136,7 +136,7 @@ export default function CalendarView({ onScheduleNew }) {
                               {e.all_day ? 'hele dag' : formatTime(parseDateSafe(e.start))}
                             </span>
                             <span className="flex-1 truncate text-sm font-medium">{e.title}</span>
-                            {e.location ? <span className="text-xs opacity-70">📍 {e.location}</span> : null}
+                            {e.location ? <span className="text-xs opacity-70"><i className="fa-solid fa-location-dot mr-1" />{e.location}</span> : null}
                             <span className="text-[10px] opacity-60">{e.calendar_email?.split('@')[0]}</span>
                           </a>
                         );

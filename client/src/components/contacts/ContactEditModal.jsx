@@ -115,7 +115,7 @@ export default function ContactEditModal({ open, onClose, contact, onSaved }) {
         </Field>
 
         <details className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
-          <summary className="cursor-pointer text-amber-800">⚠️ Geavanceerd: samenvoegen met ander contact</summary>
+          <summary className="cursor-pointer text-amber-800"><i className="fa-solid fa-triangle-exclamation mr-1.5" />Geavanceerd: samenvoegen met ander contact</summary>
           <div className="mt-2 space-y-2">
             <p className="text-xs text-amber-700">
               Berichten van het geselecteerde contact worden verplaatst naar <strong>{contact.name}</strong>.

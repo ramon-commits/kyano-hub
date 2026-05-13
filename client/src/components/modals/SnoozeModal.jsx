@@ -34,7 +34,7 @@ export default function SnoozeModal({ open, onClose, onSnooze, onWaiting, contac
             onClick={() => handleQuick(opt)}
             className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-gray-50"
           >
-            <span className="text-xl leading-none">{opt.icon}</span>
+            <i className={`fa-solid fa-${opt.icon} text-xl leading-none`} />
             <div className="flex-1">
               <div className="text-sm font-medium text-gray-900">{opt.label}</div>
               <div className="text-xs text-gray-500">{opt.sublabel}</div>
@@ -48,7 +48,7 @@ export default function SnoozeModal({ open, onClose, onSnooze, onWaiting, contac
             onClick={onWaiting}
             className="flex w-full items-center gap-3 bg-amber-50/50 px-5 py-3 text-left transition-colors hover:bg-amber-50"
           >
-            <span className="text-xl leading-none">⏳</span>
+            <i className="fa-solid fa-hourglass-half text-xl leading-none" />
             <div className="flex-1">
               <div className="text-sm font-medium text-amber-900">Tot ze reageren</div>
               <div className="text-xs text-amber-700">Status wordt &lsquo;Wacht op reactie&rsquo;</div>
@@ -60,7 +60,7 @@ export default function SnoozeModal({ open, onClose, onSnooze, onWaiting, contac
 
       <div className="border-t border-gray-100 bg-gray-50 px-5 py-4">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
-          📌 Kies datum & tijd
+          <i className="fa-solid fa-thumbtack mr-1" />Kies datum & tijd
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
