@@ -404,6 +404,30 @@ router.post('/bulk/archive', (req, res) => {
   res.json({ ok: true, updated, archived: updated });
 });
 
+// POST /api/messages/bulk/reopen — undo voor archive/snooze/done
+router.post('/bulk/reopen', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+
+  const stmt = db.prepare(`
+    UPDATE messages SET
+      status = 'open',
+      snoozed_until = NULL,
+      done_at = NULL,
+      done_note = NULL,
+      done_category = NULL,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `);
+  const tx = db.transaction(() => {
+    let n = 0;
+    for (const id of ids) n += stmt.run(id).changes;
+    return n;
+  });
+  const updated = tx();
+  res.json({ ok: true, updated, reopened: updated });
+});
+
 // DELETE /api/messages/:id (soft delete -> archived)
 router.delete('/:id', (req, res) => {
   const result = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ?`)

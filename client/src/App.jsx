@@ -18,7 +18,7 @@ import SnoozeModal from './components/modals/SnoozeModal.jsx';
 import DoneModal from './components/modals/DoneModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
 import { useHealth } from './hooks/useStats.js';
-import { useArchiveMessage, useBulkArchive, useBulkDone, useBulkSnooze, useDoneMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useWaitingMessage } from './hooks/useMessages.js';
+import { useArchiveMessage, useBulkArchive, useBulkDone, useBulkReopen, useBulkSnooze, useDoneMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useWaitingMessage } from './hooks/useMessages.js';
 import { useAuthStatus } from './hooks/useChannels.js';
 import { useToast } from './hooks/useToast.jsx';
 import { useKeyboard } from './hooks/useKeyboard.js';
@@ -61,6 +61,25 @@ export default function App() {
   const bulkSnoozeMut = useBulkSnooze();
   const bulkDoneMut = useBulkDone();
   const bulkArchiveMut = useBulkArchive();
+  const bulkReopenMut = useBulkReopen();
+
+  // Undo helper — werkt voor single OR bulk reopen, toont een eigen confirm toast
+  const undoAction = (ids) => ({
+    label: 'Ongedaan maken',
+    onClick: async () => {
+      try {
+        if (ids.length === 1) {
+          await reopenMut.mutateAsync({ id: ids[0] });
+          toast.info('Terug in inbox', 'Hersteld');
+        } else {
+          const r = await bulkReopenMut.mutateAsync({ ids });
+          toast.info(`${r.reopened} berichten hersteld`, 'Hersteld');
+        }
+      } catch (e) {
+        toast.error(e.message, 'Ongedaan maken mislukt');
+      }
+    },
+  });
 
   // Handlers
   const openMessage = useCallback((m) => setSelectedMessageId(m.id), []);
@@ -84,10 +103,10 @@ export default function App() {
     try {
       if (bulkIds && bulkIds.length) {
         const r = await bulkSnoozeMut.mutateAsync({ ids: bulkIds, snoozed_until: snoozedUntilISO });
-        toast.success(`${r.updated} berichten komen terug ${label}`, 'Snoozed');
+        toast.success(`${r.updated} berichten komen terug ${label}`, 'Snoozed', { action: undoAction(bulkIds) });
       } else if (msg) {
         await snoozeMut.mutateAsync({ id: msg.id, snoozed_until: snoozedUntilISO });
-        toast.success(`Komt terug ${label}`, 'Snoozed');
+        toast.success(`Komt terug ${label}`, 'Snoozed', { action: undoAction([msg.id]) });
         if (selectedMessageId === msg.id) setSelectedMessageId(null);
       }
     } catch (e) {
@@ -114,10 +133,10 @@ export default function App() {
     try {
       if (bulkIds && bulkIds.length) {
         const r = await bulkDoneMut.mutateAsync({ ids: bulkIds, note, category });
-        toast.success(`${r.updated} berichten in je logboek`, 'Afgehandeld');
+        toast.success(`${r.updated} berichten in je logboek`, 'Afgehandeld', { action: undoAction(bulkIds) });
       } else if (msg) {
         await doneMut.mutateAsync({ id: msg.id, category, note });
-        toast.success('Staat in je logboek', 'Afgehandeld');
+        toast.success('Staat in je logboek', 'Afgehandeld', { action: undoAction([msg.id]) });
         if (selectedMessageId === msg.id) setSelectedMessageId(null);
       }
     } catch (e) {
@@ -129,7 +148,7 @@ export default function App() {
     if (!ids?.length) return false;
     try {
       const r = await bulkArchiveMut.mutateAsync({ ids });
-      toast.info(`${r.archived} berichten naar archief`, 'Gearchiveerd');
+      toast.info(`${r.archived} berichten naar archief`, 'Gearchiveerd', { action: undoAction(ids) });
       if (selectedMessageId && ids.includes(selectedMessageId)) setSelectedMessageId(null);
       return true;
     } catch (e) {
@@ -150,7 +169,7 @@ export default function App() {
   const onArchive = async (m) => {
     try {
       await archiveMut.mutateAsync({ id: m.id });
-      toast.info('Naar archief', 'Gearchiveerd');
+      toast.info('Naar archief', 'Gearchiveerd', { action: undoAction([m.id]) });
       if (selectedMessageId === m.id) setSelectedMessageId(null);
     } catch (e) {
       toast.error(e.message);

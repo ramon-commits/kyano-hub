@@ -142,6 +142,17 @@ export function useBulkArchive() {
   });
 }
 
+export function useBulkReopen() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids }) => api.post('/messages/bulk/reopen', { ids }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
 export function useBulkSnooze() {
   const qc = useQueryClient();
   return useMutation({
