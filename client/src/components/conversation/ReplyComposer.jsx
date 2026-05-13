@@ -33,6 +33,15 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     setCaret(0);
   }, [defaultAccount]);
 
+  // Listen for "r" shortcut from App — focus the textarea
+  useEffect(() => {
+    function onFocusEvent() {
+      ref.current?.focus();
+    }
+    window.addEventListener('focus-reply-composer', onFocusEvent);
+    return () => window.removeEventListener('focus-reply-composer', onFocusEvent);
+  }, []);
+
   const trigger = useMemo(() => findTriggerAt(text, caret), [text, caret]);
   const matches = useMemo(() => {
     if (!trigger) return [];

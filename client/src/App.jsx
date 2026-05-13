@@ -287,6 +287,12 @@ export default function App() {
         }
         return false;
       },
+      r: () => {
+        // Focus de reply composer wanneer een conversation geopend is
+        if (!selectedMessageId) return false;
+        window.dispatchEvent(new Event('focus-reply-composer'));
+        return true;
+      },
     };
     for (const item of NAV_ITEMS) {
       if (item.shortcut) {

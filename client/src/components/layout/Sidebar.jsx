@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStats } from '../../hooks/useStats.js';
 import { useChannels } from '../../hooks/useChannels.js';
 import { NAV_ITEMS, NAV_GROUPS } from '../../lib/constants.js';
@@ -31,8 +31,18 @@ export default function Sidebar({ active, onSelect }) {
   const { data: channelsData } = useChannels();
   const channels = channelsData?.channels || [];
 
-  // Collapsed mode op smal scherm (responsive — full state lives in App)
-  const [collapsed, setCollapsed] = useState(false);
+  // Auto-collapse onder 768px, user kan toggelen
+  const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [userOverride, setUserOverride] = useState(false);
+
+  useEffect(() => {
+    if (userOverride) return; // user heeft handmatig getoggled — niet overschrijven
+    const onResize = () => setCollapsed(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [userOverride]);
+
+  const toggle = (next) => { setCollapsed(next); setUserOverride(true); };
 
   return (
     <aside
@@ -137,7 +147,7 @@ export default function Sidebar({ active, onSelect }) {
       <div className={cn('border-t border-white/5 py-4', collapsed ? 'flex justify-center px-2' : 'px-5')}>
         {collapsed ? (
           <button
-            onClick={() => setCollapsed(false)}
+            onClick={() => toggle(false)}
             className="grid h-8 w-8 place-items-center rounded-full text-xs font-semibold text-white hover:opacity-90"
             style={{ background: 'var(--accent)' }}
             title="Uitklappen"
@@ -157,7 +167,7 @@ export default function Sidebar({ active, onSelect }) {
               <div className="text-[11px] opacity-60">Endless Minds</div>
             </div>
             <button
-              onClick={() => setCollapsed(true)}
+              onClick={() => toggle(true)}
               className="ml-auto grid h-6 w-6 place-items-center rounded-md opacity-50 hover:bg-white/10 hover:opacity-100"
               title="Inklappen"
             >

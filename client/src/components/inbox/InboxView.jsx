@@ -152,8 +152,8 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
             <div className="py-16"><LoadingSpinner label="Berichten laden…" /></div>
           ) : messages.length === 0 ? (
             <EmptyState
-              icon="sun"
-              title={search ? 'Geen resultaten' : 'Inbox is leeg'}
+              icon={search ? 'magnifying-glass' : 'inbox'}
+              title={search ? 'Geen resultaten' : 'Inbox zero! Alles is afgehandeld.'}
               description={search ? 'Geen berichten die matchen met je zoekterm.' : 'Alle berichten zijn afgehandeld of gesnoozet. Tijd voor koffie.'}
             />
           ) : (

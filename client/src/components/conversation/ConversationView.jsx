@@ -89,7 +89,9 @@ export default function ConversationView({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-base font-semibold text-gray-900">
-              {m.contact_name || m.channel_account || 'Onbekend'}
+              {isEmail && m.subject
+                ? m.subject
+                : (m.contact_name || m.channel_account || 'Onbekend')}
             </h2>
             <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" />
             {m.priority === 'high' ? <PriorityBadge priority="high" size="xs" /> : null}
@@ -100,15 +102,17 @@ export default function ConversationView({
             ) : null}
           </div>
           {isEmail && m.subject ? (
-            <div className="mt-0.5 truncate text-sm text-gray-600">{m.subject}</div>
-          ) : null}
-          {isGroupChat ? (
+            <div className="mt-0.5 truncate text-sm text-gray-600">
+              {m.contact_name || m.channel_account}
+              {m.contact_email ? <span className="ml-1 text-gray-400">· {m.contact_email}</span> : null}
+            </div>
+          ) : isGroupChat ? (
             <div className="mt-0.5 truncate text-xs text-gray-500">
               <i className="fa-solid fa-users mr-1" />Groepschat · {participantCount} deelnemers
             </div>
-          ) : (m.contact_company || m.contact_email) ? (
+          ) : (m.contact_company || m.contact_email || m.contact_phone) ? (
             <div className="mt-0.5 truncate text-xs text-gray-500">
-              {[m.contact_company, m.contact_email].filter(Boolean).join(' · ')}
+              {[m.contact_company, m.contact_email, m.contact_phone].filter(Boolean).join(' · ')}
             </div>
           ) : null}
         </div>

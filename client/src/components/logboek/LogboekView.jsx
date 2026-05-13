@@ -99,7 +99,7 @@ export default function LogboekView({ onOpenMessage, onReopen, selectedId }) {
           ) : messages.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white">
               <EmptyState
-                icon="inbox"
+                icon="clipboard-list"
                 title={search || category !== 'all' ? 'Geen matches' : 'Logboek is leeg'}
                 description={search || category !== 'all'
                   ? 'Probeer een andere zoekterm of categorie.'
