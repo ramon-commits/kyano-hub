@@ -1,7 +1,8 @@
 import Avatar from '../shared/Avatar.jsx';
 import ChannelBadge from '../shared/ChannelBadge.jsx';
 import PriorityBadge from '../shared/PriorityBadge.jsx';
-import { cn, timeAgo } from '../../lib/utils.js';
+import Badge from '../shared/Badge.jsx';
+import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
 export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, onBlock, showWakeUp, showDoneInfo }) {
   const m = message;
@@ -11,7 +12,7 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
     <div
       onClick={onClick}
       className={cn(
-        'group flex cursor-pointer items-center gap-4 border-b border-gray-100 px-5 py-3.5 transition-colors',
+        'group flex cursor-pointer items-center gap-4 border-b border-gray-100 px-5 py-[14px] transition-colors last:border-b-0',
         selected ? 'bg-blue-50/60' : 'hover:bg-gray-50',
       )}
     >
@@ -24,19 +25,17 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate font-semibold text-gray-900">
+          <span className="truncate text-sm font-semibold text-gray-900">
             {m.contact_name || m.channel_account || 'Onbekend'}
           </span>
           <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" showLabel={false} />
           {m.priority === 'high' ? <PriorityBadge priority="high" size="xs" /> : null}
           {m.status === 'waiting' ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-              ⏳ Wacht op reactie
-            </span>
+            <Badge color="#a16207" bg="#fef3c7" size="xs">⏳ Wacht op reactie</Badge>
           ) : null}
         </div>
 
-        <div className="mt-0.5 flex items-baseline gap-2 text-sm">
+        <div className="mt-0.5 flex items-baseline gap-1.5 text-[13px]">
           {isEmail && m.subject ? (
             <span className="truncate font-medium text-gray-800">{m.subject}</span>
           ) : null}
@@ -46,17 +45,15 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
         </div>
 
         {showWakeUp && m.snoozed_until ? (
-          <div className="mt-1 text-[11px] text-amber-700">
-            ⏰ Komt terug: <strong>{new Date(m.snoozed_until).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</strong>
+          <div className="mt-1 text-[11px] text-orange-700">
+            ⏰ Komt terug: <strong>{formatDateShort(parseDateSafe(m.snoozed_until))} {formatTime(parseDateSafe(m.snoozed_until))}</strong>
           </div>
         ) : null}
 
         {showDoneInfo && m.done_at ? (
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-600">
-            <span className="rounded-full bg-green-50 px-1.5 py-0.5 font-medium text-green-700">
-              ✅ {m.done_category || 'afgehandeld'}
-            </span>
-            {m.done_note ? <span className="italic">&ldquo;{m.done_note}&rdquo;</span> : null}
+          <div className="mt-1 flex items-center gap-2 text-[11px]">
+            <Badge color="#16a34a" bg="#dcfce7" size="xs">✅ {m.done_category || 'afgehandeld'}</Badge>
+            {m.done_note ? <span className="italic text-gray-600">&ldquo;{m.done_note}&rdquo;</span> : null}
           </div>
         ) : null}
       </div>
@@ -64,7 +61,7 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
       <div className="flex shrink-0 items-center gap-1">
         <span className="text-xs text-gray-400 group-hover:hidden">{timeAgo(m.received_at)}</span>
 
-        <div className="hidden items-center gap-1 group-hover:flex">
+        <div className="hidden items-center gap-0.5 group-hover:flex">
           {onSnooze ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onSnooze(m); }} title="Snooze" hoverColor="hover:bg-orange-50 hover:text-orange-700">
               ⏰

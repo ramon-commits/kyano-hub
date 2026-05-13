@@ -55,11 +55,25 @@ router.post('/sender-rules', (req, res) => {
     .run(id, email_pattern.toLowerCase(), rule);
 
   // Pas regel toe op bestaande berichten van deze afzender
+  // Pattern '@domein.tld' = suffix-match (alle email-adressen van dat domein)
+  // Pattern 'user@x.com'  = exact match (alleen deze afzender)
   if (rule === 'block' || rule === 'newsletter' || rule === 'info') {
-    db.prepare(`
-      UPDATE messages SET status = 'archived', updated_at = datetime('now')
-      WHERE status = 'open' AND contact_id IN (SELECT id FROM contacts WHERE lower(email) LIKE ?)
-    `).run(`%${email_pattern.toLowerCase()}%`);
+    const lower = email_pattern.toLowerCase();
+    if (lower.startsWith('@')) {
+      db.prepare(`
+        UPDATE messages SET status = 'archived', updated_at = datetime('now')
+        WHERE status = 'open' AND contact_id IN (
+          SELECT id FROM contacts WHERE lower(email) LIKE ?
+        )
+      `).run(`%${lower}`);
+    } else {
+      db.prepare(`
+        UPDATE messages SET status = 'archived', updated_at = datetime('now')
+        WHERE status = 'open' AND contact_id IN (
+          SELECT id FROM contacts WHERE lower(email) = ?
+        )
+      `).run(lower);
+    }
   }
 
   res.status(201).json({ ok: true, id, rule, email_pattern });

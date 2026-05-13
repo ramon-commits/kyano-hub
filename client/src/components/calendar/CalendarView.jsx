@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react';
 import { useCalendarEvents } from '../../hooks/useCalendar.js';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
+import PageHeader from '../shared/PageHeader.jsx';
 import { formatDateShort, formatTime, parseDateSafe, cn } from '../../lib/utils.js';
 
 const CHANNEL_COLOR = {
-  'gmail-1': { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' },
-  'gmail-2': { bg: '#f0fdf4', border: '#bbf7d0', text: '#166534' },
-  'gmail-3': { bg: '#fff7ed', border: '#fed7aa', text: '#9a3412' },
-  'gmail-4': { bg: '#f5f3ff', border: '#ddd6fe', text: '#6b21a8' },
+  'gmail-1': { bg: '#eff6ff', border: '#3b82f6', text: '#1e40af' },
+  'gmail-2': { bg: '#dcfce7', border: '#16a34a', text: '#166534' },
+  'gmail-3': { bg: '#fff7ed', border: '#ea580c', text: '#9a3412' },
+  'gmail-4': { bg: '#f5f3ff', border: '#7c3aed', text: '#6b21a8' },
 };
 
 const DAYS_NL_LONG = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
@@ -36,7 +37,6 @@ export default function CalendarView({ onScheduleNew }) {
   const { data, isLoading, isError, error } = useCalendarEvents(weekStart.toISOString(), weekEnd.toISOString());
   const events = data?.events || [];
 
-  // Group by day
   const byDay = useMemo(() => {
     const days = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(weekStart);
@@ -50,50 +50,46 @@ export default function CalendarView({ onScheduleNew }) {
   }, [events, weekStart]);
 
   const today = new Date();
-
   const navigate = (delta) => {
     const ns = new Date(weekStart);
     ns.setDate(ns.getDate() + delta * 7);
     setWeekStart(ns);
   };
-
   const isCurrentWeek = isSameDay(weekStart, startOfWeek(today));
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-gray-200 bg-white px-8 py-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">📅 Calendar</h1>
-            <p className="mt-0.5 text-sm text-gray-500">
-              {formatDateShort(weekStart)} t/m {formatDateShort(new Date(weekEnd.getTime() - 86400000))}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => navigate(-1)} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">← Vorige</button>
-            <button
-              onClick={() => setWeekStart(startOfWeek(new Date()))}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium',
-                isCurrentWeek ? 'bg-blue-100 text-blue-700' : 'border border-gray-200 bg-white hover:bg-gray-50',
-              )}
-            >
-              Vandaag
-            </button>
-            <button onClick={() => navigate(1)} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">Volgende →</button>
+      <PageHeader
+        title="📅 Calendar"
+        subtitle={`${formatDateShort(weekStart)} t/m ${formatDateShort(new Date(weekEnd.getTime() - 86400000))}`}
+        actions={
+          <>
+            <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5">
+              <button onClick={() => navigate(-1)} className="rounded-md px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50">←</button>
+              <button
+                onClick={() => setWeekStart(startOfWeek(new Date()))}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-sm font-medium',
+                  isCurrentWeek ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                Vandaag
+              </button>
+              <button onClick={() => navigate(1)} className="rounded-md px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50">→</button>
+            </div>
             {onScheduleNew ? (
               <button
                 onClick={() => onScheduleNew()}
-                className="ml-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                className="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
               >
                 + Nieuw event
               </button>
             ) : null}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
         <div className="mx-8 my-6 space-y-4">
           {isLoading ? (
             <div className="rounded-xl border border-gray-200 bg-white py-12"><LoadingSpinner label="Calendar laden…" /></div>
@@ -113,16 +109,16 @@ export default function CalendarView({ onScheduleNew }) {
             byDay.map(({ date, events: dayEvents }) => {
               const isToday = isSameDay(date, today);
               return (
-                <section key={date.toISOString()} className={cn('rounded-xl border bg-white p-4 shadow-sm', isToday ? 'border-blue-300' : 'border-gray-200')}>
+                <section key={date.toISOString()} className={cn('rounded-xl border bg-white p-5 shadow-sm', isToday ? 'border-blue-300 ring-1 ring-blue-100' : 'border-gray-200')}>
                   <div className="mb-3 flex items-baseline gap-2">
                     <h3 className={cn('text-sm font-semibold', isToday ? 'text-blue-700' : 'text-gray-900')}>
                       {DAYS_NL_LONG[date.getDay()]} {date.getDate()}
                     </h3>
                     {isToday ? <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">Vandaag</span> : null}
-                    <span className="text-xs text-gray-400">· {dayEvents.length} event{dayEvents.length === 1 ? '' : 's'}</span>
+                    <span className="ml-auto text-[11px] text-gray-400">{dayEvents.length} event{dayEvents.length === 1 ? '' : 's'}</span>
                   </div>
                   {dayEvents.length === 0 ? (
-                    <div className="text-xs text-gray-400">— Geen afspraken</div>
+                    <div className="rounded-md bg-gray-50 px-3 py-2 text-center text-xs text-gray-400">Geen events</div>
                   ) : (
                     <div className="space-y-1.5">
                       {dayEvents.map((e) => {
@@ -133,10 +129,10 @@ export default function CalendarView({ onScheduleNew }) {
                             href={e.html_link}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-3 rounded-md border px-3 py-2 transition-shadow hover:shadow-sm"
-                            style={{ background: c.bg, borderColor: c.border, color: c.text }}
+                            className="flex items-center gap-3 rounded-r-lg border-l-4 bg-white px-3 py-2 transition-shadow hover:shadow-md"
+                            style={{ borderLeftColor: c.border, backgroundColor: c.bg, color: c.text }}
                           >
-                            <span className="font-mono text-xs font-medium" style={{ color: c.text }}>
+                            <span className="font-mono text-xs font-medium">
                               {e.all_day ? 'hele dag' : formatTime(parseDateSafe(e.start))}
                             </span>
                             <span className="flex-1 truncate text-sm font-medium">{e.title}</span>

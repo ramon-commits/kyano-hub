@@ -135,17 +135,33 @@ function persistUnipileMessage(channel, chat, msg) {
 }
 
 // Sync één Unipile-account naar zijn lokale channel
+// Optimalisaties: 30 chats × 10 msgs (was 50), skip ongewijzigde chats sinds last_sync_at
 export async function syncUnipileAccount(channelId, unipileAccountId) {
   const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(channelId);
   if (!channel) throw new Error(`Channel ${channelId} not found`);
 
+  const lastSyncRow = db.prepare('SELECT last_sync_at FROM sync_state WHERE channel_id = ?').get(channelId);
+  const lastSyncAt = lastSyncRow?.last_sync_at ? new Date(lastSyncRow.last_sync_at.replace(' ', 'T') + 'Z') : null;
+
   const { items: chats } = await unipile.listChats(unipileAccountId, { limit: 30 });
   let inserted = 0;
   let errors = 0;
+  let skippedChats = 0;
 
   for (const chat of chats) {
+    // Skip chats die niet gewijzigd zijn sinds de laatste sync
+    const chatUpdatedRaw = chat.updated_at || chat.timestamp || chat.last_message_at;
+    if (lastSyncAt && chatUpdatedRaw) {
+      const chatUpdated = new Date(chatUpdatedRaw);
+      if (!isNaN(chatUpdated.getTime()) && chatUpdated <= lastSyncAt) {
+        skippedChats++;
+        continue;
+      }
+    }
+
     try {
-      const { items: messages } = await unipile.getChatMessages(chat.id, { limit: 50 });
+      // Slechts 10 recente berichten per chat (was 50) — dedup vangt overlap af
+      const { items: messages } = await unipile.getChatMessages(chat.id, { limit: 10 });
       for (const msg of messages) {
         try {
           const r = persistUnipileMessage(channel, chat, msg);
@@ -161,13 +177,12 @@ export async function syncUnipileAccount(channelId, unipileAccountId) {
     }
   }
 
-  // Update sync state
   db.prepare(`
     INSERT INTO sync_state (channel_id, last_sync_at) VALUES (?, datetime('now'))
     ON CONFLICT(channel_id) DO UPDATE SET last_sync_at = datetime('now')
   `).run(channelId);
 
-  return { channel_id: channelId, inserted, errors, chats_seen: chats.length };
+  return { channel_id: channelId, inserted, errors, chats_seen: chats.length, chats_skipped: skippedChats };
 }
 
 // Sync alle Unipile accounts

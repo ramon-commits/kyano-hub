@@ -36,7 +36,7 @@ export default function DailySummaryCard({ onOpenContact }) {
   };
 
   return (
-    <div className="relative mb-4 overflow-hidden rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 px-5 py-4 shadow-sm">
+    <div className="relative mb-4 overflow-hidden rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-5 shadow-sm">
       <button
         onClick={close}
         className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-white/60 hover:text-gray-900"
@@ -45,7 +45,7 @@ export default function DailySummaryCard({ onOpenContact }) {
       >
         ×
       </button>
-      <h2 className="mb-1 text-sm font-semibold text-blue-900">
+      <h2 className="mb-1 text-base font-semibold text-blue-900">
         {greeting} Ramon
       </h2>
       <p className="mb-3 text-sm text-gray-700">

@@ -63,7 +63,8 @@ export default function ConversationView({
   };
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-gray-50">
+      {/* Header */}
       <header className="flex items-center gap-3 border-b border-gray-200 bg-white px-6 py-4">
         <button
           onClick={onBack}
@@ -97,7 +98,8 @@ export default function ConversationView({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
+      {/* Thread body */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
         {isEmail ? <EmailThread message={m} threadMessages={threadMessages} /> : <ChatThread message={m} threadMessages={threadMessages} />}
       </div>
 

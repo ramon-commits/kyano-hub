@@ -95,7 +95,7 @@ export default function ContactDetail({ contactId, onClose, onOpenMessage, onSch
 
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="flex items-center justify-between px-5 pt-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
                 Conversatie historie
               </h3>
               <Badge bg="#f3f4f6" color="#374151">

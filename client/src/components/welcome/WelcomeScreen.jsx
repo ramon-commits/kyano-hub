@@ -6,25 +6,25 @@ export default function WelcomeScreen({ onGoToSettings }) {
           K
         </div>
         <h1 className="mb-2 text-2xl font-bold text-gray-900">Welkom bij Kyano Comm Hub</h1>
-        <p className="mb-8 text-sm text-gray-600">
+        <p className="mb-8 text-sm text-gray-500">
           Eén dashboard voor al je communicatie. Email, WhatsApp, LinkedIn, Calendar — alles op één plek.
         </p>
 
-        <div className="mb-8 space-y-3 text-left">
+        <div className="mb-8 space-y-2.5 text-left">
           <Step n={1} done>
-            <strong>Open de hub</strong>
+            <strong className="text-sm text-gray-900">Open de hub</strong>
             <div className="text-xs text-gray-500">Je staat hier nu ✨</div>
           </Step>
           <Step n={2}>
-            <strong>Verbind je eerste email account</strong>
+            <strong className="text-sm text-gray-900">Verbind je eerste email account</strong>
             <div className="text-xs text-gray-500">Klik hieronder om naar Instellingen te gaan</div>
           </Step>
           <Step n={3}>
-            <strong>Berichten worden opgehaald</strong>
+            <strong className="text-sm text-gray-900">Berichten worden opgehaald</strong>
             <div className="text-xs text-gray-500">Initiële sync haalt je 100 ongelezen mails op</div>
           </Step>
           <Step n={4}>
-            <strong>Klaar!</strong>
+            <strong className="text-sm text-gray-900">Klaar!</strong>
             <div className="text-xs text-gray-500">Lezen, beantwoorden, snoozen — vanuit één hub</div>
           </Step>
         </div>
@@ -50,7 +50,7 @@ function Step({ n, children, done }) {
       >
         {done ? '✓' : n}
       </div>
-      <div className="flex-1 text-sm text-gray-800">{children}</div>
+      <div className="flex-1">{children}</div>
     </div>
   );
 }

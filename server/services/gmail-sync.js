@@ -84,16 +84,19 @@ function deepLinkFor(channel, messageId) {
   return `https://mail.google.com/mail/u/${idx}/#inbox/${messageId}`;
 }
 
-// Sender rule lookup: match op exact email of domein
+// Sender rule lookup
+// - Exact email match: email_pattern = senderEmail
+// - Domein suffix match: email_pattern = '@domain.tld' (start met @, eindigt op het domein)
 function findSenderRule(senderEmail) {
   if (!senderEmail) return null;
   const lower = senderEmail.toLowerCase();
-  const domain = lower.split('@')[1];
+  const domain = lower.includes('@') ? '@' + lower.split('@')[1] : null;
   const rule = db.prepare(`
     SELECT rule FROM sender_rules
-    WHERE lower(email_pattern) = ? OR (? IS NOT NULL AND lower(email_pattern) = ?)
+    WHERE lower(email_pattern) = ?
+       OR (? IS NOT NULL AND lower(email_pattern) = ?)
     LIMIT 1
-  `).get(lower, domain || null, domain ? '@' + domain : '');
+  `).get(lower, domain, domain);
   return rule?.rule || null;
 }
 

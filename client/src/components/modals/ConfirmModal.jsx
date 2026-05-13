@@ -11,7 +11,7 @@ export default function ConfirmModal({ open, onClose, onConfirm, title = 'Weet j
         <>
           <button
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+            className="rounded-lg px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
           >
             {cancelLabel}
           </button>
@@ -19,8 +19,8 @@ export default function ConfirmModal({ open, onClose, onConfirm, title = 'Weet j
             onClick={() => { onConfirm?.(); onClose?.(); }}
             className={
               isDanger
-                ? 'rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700'
-                : 'rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700'
+                ? 'rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700'
+                : 'rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700'
             }
           >
             {confirmLabel}
@@ -28,7 +28,7 @@ export default function ConfirmModal({ open, onClose, onConfirm, title = 'Weet j
         </>
       }
     >
-      {message ? <p className="px-6 py-4 text-sm text-gray-600">{message}</p> : null}
+      {message ? <p className="px-5 py-4 text-sm text-gray-600 leading-relaxed">{message}</p> : null}
     </Modal>
   );
 }

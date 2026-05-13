@@ -67,7 +67,7 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
       onClose={onClose}
       title="Afspraak inplannen"
       subtitle="Toevoegen aan Google Calendar"
-      maxWidth="max-w-lg"
+      maxWidth="max-w-[440px]"
       footer={
         <>
           <button onClick={onClose} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100">
