@@ -6,18 +6,28 @@ import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import PageHeader from '../shared/PageHeader.jsx';
 import { debounce, getDaysSinceContact, cn } from '../../lib/utils.js';
+import { CONTACT_STATUS } from '../../lib/constants.js';
+
+const STATUS_BY_VALUE = Object.fromEntries(CONTACT_STATUS.map((s) => [s.value, s]));
 
 const SORT_OPTIONS = [
   { id: 'name', label: 'Naam (A-Z)' },
   { id: 'last_contact', label: 'Laatst gesproken' },
   { id: 'messages', label: 'Meeste berichten' },
+  { id: 'deal_value', label: 'Deal waarde (hoog → laag)' },
 ];
 
 const FILTER_OPTIONS = [
   { id: '', label: 'Alle contacten' },
   { id: 'has_open', label: 'Heeft open berichten' },
   { id: 'no_contact_14d', label: 'Niet gesproken >14d' },
+  ...CONTACT_STATUS.map((s) => ({ id: s.value, label: `Status: ${s.label}` })),
 ];
+
+function formatCurrency(n) {
+  if (n == null || isNaN(Number(n))) return null;
+  return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(n));
+}
 
 export default function ContactenView({ onOpenContact }) {
   const [search, setSearch] = useState('');
@@ -100,6 +110,8 @@ export default function ContactenView({ onOpenContact }) {
 function ContactCard({ contact, onClick }) {
   const daysSince = getDaysSinceContact(contact.last_message_at);
   const isStale = daysSince != null && daysSince > 14;
+  const status = contact.contact_status ? STATUS_BY_VALUE[contact.contact_status] : null;
+  const deal = formatCurrency(contact.deal_value);
 
   return (
     <button
@@ -113,9 +125,19 @@ function ContactCard({ contact, onClick }) {
         size="lg"
       />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-gray-900">{contact.name}</div>
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-semibold text-gray-900">{contact.name}</div>
+          {status ? (
+            <Badge color={status.color} bg={status.bg} size="xs">{status.label}</Badge>
+          ) : null}
+        </div>
         {contact.company ? (
           <div className="truncate text-xs text-gray-500">{contact.company}</div>
+        ) : null}
+        {deal ? (
+          <div className="mt-1 text-xs font-semibold text-emerald-700">
+            <i className="fa-solid fa-euro-sign mr-1" />{deal}
+          </div>
         ) : null}
 
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -126,6 +148,13 @@ function ContactCard({ contact, onClick }) {
             <Badge color="#374151" bg="#f3f4f6"><i className="fa-solid fa-comment mr-1" />{contact.message_count}</Badge>
           ) : null}
         </div>
+
+        {contact.next_action ? (
+          <div className="mt-2 truncate text-[11px] text-blue-700">
+            <i className="fa-solid fa-flag-checkered mr-1" />{contact.next_action}
+            {contact.next_action_date ? <span className="ml-1 text-blue-500">· {contact.next_action_date}</span> : null}
+          </div>
+        ) : null}
 
         <div className={cn('mt-2 text-[11px]', isStale ? 'font-medium text-red-600' : 'text-gray-500')}>
           {daysSince != null

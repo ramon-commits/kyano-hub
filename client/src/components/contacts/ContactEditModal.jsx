@@ -4,9 +4,13 @@ import { useContacts, useUpdateContact } from '../../hooks/useContacts.js';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../hooks/useToast.jsx';
 import { useQueryClient } from '@tanstack/react-query';
+import { CONTACT_STATUS } from '../../lib/constants.js';
 
 export default function ContactEditModal({ open, onClose, contact, onSaved }) {
-  const [form, setForm] = useState({ name: '', company: '', email: '', phone: '', birthday: '', tags: '', notes: '' });
+  const [form, setForm] = useState({
+    name: '', company: '', email: '', phone: '', birthday: '', tags: '', notes: '',
+    contact_status: '', deal_value: '', next_action: '', next_action_date: '',
+  });
   const [mergeTarget, setMergeTarget] = useState('');
   const [mergeSearch, setMergeSearch] = useState('');
   const update = useUpdateContact();
@@ -24,6 +28,10 @@ export default function ContactEditModal({ open, onClose, contact, onSaved }) {
         birthday: contact.birthday || '',
         tags: contact.tags || '',
         notes: contact.notes || '',
+        contact_status: contact.contact_status || '',
+        deal_value: contact.deal_value != null ? String(contact.deal_value) : '',
+        next_action: contact.next_action || '',
+        next_action_date: contact.next_action_date || '',
       });
       setMergeTarget('');
       setMergeSearch('');
@@ -39,7 +47,15 @@ export default function ContactEditModal({ open, onClose, contact, onSaved }) {
 
   const submit = async () => {
     try {
-      await update.mutateAsync({ id: contact.id, ...form });
+      const payload = {
+        ...form,
+        // Convert deal_value to number (or null when empty)
+        deal_value: form.deal_value === '' ? null : Number(form.deal_value),
+        contact_status: form.contact_status || null,
+        next_action: form.next_action || null,
+        next_action_date: form.next_action_date || null,
+      };
+      await update.mutateAsync({ id: contact.id, ...payload });
       toast.success('Contact opgeslagen');
       onSaved?.();
       onClose?.();
@@ -113,6 +129,52 @@ export default function ContactEditModal({ open, onClose, contact, onSaved }) {
         <Field label="Notities">
           <textarea value={form.notes} onChange={set('notes')} rows={3} className={`${inputCls} resize-none`} />
         </Field>
+
+        <div className="mt-4 -mx-6 border-t border-gray-100 px-6 pt-4">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            CRM · Relatie
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Status">
+              <select value={form.contact_status} onChange={set('contact_status')} className={`${inputCls} bg-white`}>
+                <option value="">— Geen status —</option>
+                {CONTACT_STATUS.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Deal waarde (€)">
+              <input
+                type="number"
+                value={form.deal_value}
+                onChange={set('deal_value')}
+                placeholder="0"
+                step="100"
+                min="0"
+                className={inputCls}
+              />
+            </Field>
+          </div>
+          <div className="mt-3 grid grid-cols-[1fr_140px] gap-3">
+            <Field label="Volgende actie">
+              <input
+                type="text"
+                value={form.next_action}
+                onChange={set('next_action')}
+                placeholder="Bijv. offerte sturen, follow-up call…"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Uiterlijk">
+              <input
+                type="date"
+                value={form.next_action_date}
+                onChange={set('next_action_date')}
+                className={inputCls}
+              />
+            </Field>
+          </div>
+        </div>
 
         <details className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
           <summary className="cursor-pointer text-amber-800"><i className="fa-solid fa-triangle-exclamation mr-1.5" />Geavanceerd: samenvoegen met ander contact</summary>

@@ -7,7 +7,14 @@ import ContactEditModal from './ContactEditModal.jsx';
 import { useContact } from '../../hooks/useContacts.js';
 import { useContactMessages } from '../../hooks/useMessages.js';
 import { formatDateShort, getDaysSinceContact, getDaysUntilBirthday, timeAgo } from '../../lib/utils.js';
-import { STATUS_COLORS } from '../../lib/constants.js';
+import { CONTACT_STATUS, STATUS_COLORS } from '../../lib/constants.js';
+
+const STATUS_BY_VALUE = Object.fromEntries(CONTACT_STATUS.map((s) => [s.value, s]));
+
+function formatCurrency(n) {
+  if (n == null || isNaN(Number(n))) return null;
+  return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(n));
+}
 
 export default function ContactDetail({ contactId, onClose, onOpenMessage, onSchedule }) {
   const { data: contact, isLoading } = useContact(contactId);
@@ -28,8 +35,20 @@ export default function ContactDetail({ contactId, onClose, onOpenMessage, onSch
           <>
             <Avatar name={contact.name} initials={contact.avatar_initials} color={contact.avatar_color} size="lg" />
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-lg font-semibold text-gray-900">{contact.name}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-lg font-semibold text-gray-900">{contact.name}</h2>
+                {contact.contact_status && STATUS_BY_VALUE[contact.contact_status] ? (
+                  <Badge color={STATUS_BY_VALUE[contact.contact_status].color} bg={STATUS_BY_VALUE[contact.contact_status].bg} size="xs">
+                    {STATUS_BY_VALUE[contact.contact_status].label}
+                  </Badge>
+                ) : null}
+              </div>
               {contact.company ? <p className="truncate text-sm text-gray-500">{contact.company}</p> : null}
+              {contact.deal_value != null && contact.deal_value !== 0 ? (
+                <p className="mt-1 text-xs font-semibold text-emerald-700">
+                  <i className="fa-solid fa-euro-sign mr-1" />{formatCurrency(contact.deal_value)}
+                </p>
+              ) : null}
               <button
                 onClick={() => setEditOpen(true)}
                 className="mt-2 inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
@@ -73,6 +92,18 @@ export default function ContactDetail({ contactId, onClose, onOpenMessage, onSch
               highlight={contact.birthday && getDaysUntilBirthday(contact.birthday) <= 7}
             />
           </div>
+
+          {contact.next_action ? (
+            <div className="mx-5 mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+              <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-blue-700">
+                <span><i className="fa-solid fa-flag-checkered mr-1.5" />Volgende actie</span>
+                {contact.next_action_date ? (
+                  <span className="font-mono text-[10px] text-blue-600">{contact.next_action_date}</span>
+                ) : null}
+              </div>
+              <div className="mt-1 text-sm text-blue-900">{contact.next_action}</div>
+            </div>
+          ) : null}
 
           <div className="space-y-2 border-y border-gray-100 px-5 py-4 text-sm">
             {contact.email ? <InfoRow icon={<i className="fa-solid fa-envelope" />} value={contact.email} /> : null}

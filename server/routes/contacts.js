@@ -23,11 +23,15 @@ router.get('/', (req, res) => {
     where.push(`NOT EXISTS (
       SELECT 1 FROM messages WHERE contact_id = c.id AND received_at > datetime('now','-14 days')
     )`);
+  } else if (['lead', 'klant', 'partner', 'leverancier', 'vriend', 'overig'].includes(filter)) {
+    where.push('c.contact_status = @status');
+    params.status = filter;
   }
 
   let orderBy = 'c.name ASC';
   if (sort === 'last_contact') orderBy = 'last_message_at DESC NULLS LAST';
   else if (sort === 'messages') orderBy = 'message_count DESC';
+  else if (sort === 'deal_value') orderBy = 'c.deal_value DESC NULLS LAST';
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
@@ -136,7 +140,7 @@ router.post('/', (req, res) => {
 
 // PATCH /api/contacts/:id
 router.patch('/:id', (req, res) => {
-  const allowed = ['name', 'company', 'email', 'phone', 'birthday', 'notes', 'tags', 'avatar_color', 'avatar_initials'];
+  const allowed = ['name', 'company', 'email', 'phone', 'birthday', 'notes', 'tags', 'avatar_color', 'avatar_initials', 'contact_status', 'deal_value', 'next_action', 'next_action_date'];
   const sets = [];
   const params = { id: req.params.id };
   for (const k of allowed) {

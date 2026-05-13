@@ -32,6 +32,23 @@ try {
   console.error('FTS rebuild check failed:', e.message);
 }
 
+// Guarded ALTER TABLE migraties — geen migrations-runner, dus per-kolom try/catch
+// (SQLite ondersteunt geen "ADD COLUMN IF NOT EXISTS")
+const SAFE_ALTERS = [
+  // CRM velden voor contacten (Fase 4)
+  "ALTER TABLE contacts ADD COLUMN contact_status TEXT",
+  "ALTER TABLE contacts ADD COLUMN deal_value REAL",
+  "ALTER TABLE contacts ADD COLUMN next_action TEXT",
+  "ALTER TABLE contacts ADD COLUMN next_action_date TEXT",
+];
+for (const sql of SAFE_ALTERS) {
+  try { db.exec(sql); } catch (e) {
+    if (!/duplicate column/i.test(e.message)) {
+      console.error('Migration failed:', sql, '—', e.message);
+    }
+  }
+}
+
 // Seed quick replies (alleen als tabel leeg is)
 try {
   const n = db.prepare('SELECT COUNT(*) AS n FROM quick_replies').get().n;
