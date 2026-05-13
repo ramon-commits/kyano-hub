@@ -17,8 +17,9 @@ import WelcomeScreen from './components/welcome/WelcomeScreen.jsx';
 import SnoozeModal from './components/modals/SnoozeModal.jsx';
 import DoneModal from './components/modals/DoneModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
+import CommandPalette from './components/shared/CommandPalette.jsx';
 import { useHealth } from './hooks/useStats.js';
-import { useArchiveMessage, useBulkArchive, useBulkDone, useBulkReopen, useBulkSnooze, useDoneMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useWaitingMessage } from './hooks/useMessages.js';
+import { useArchiveMessage, useBulkArchive, useBulkDone, useBulkReopen, useBulkSnooze, useDoneMessage, usePinMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useUnpinMessage, useWaitingMessage } from './hooks/useMessages.js';
 import { useAuthStatus } from './hooks/useChannels.js';
 import { useToast } from './hooks/useToast.jsx';
 import { useKeyboard } from './hooks/useKeyboard.js';
@@ -50,6 +51,7 @@ export default function App() {
   const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null, bulkIds: null });
   const [doneModal, setDoneModal] = useState({ open: false, message: null, bulkIds: null });
   const [scheduleModal, setScheduleModal] = useState({ open: false, contact: null, message: null });
+  const [cmdkOpen, setCmdkOpen] = useState(false);
 
   const toast = useToast();
   const snoozeMut = useSnoozeMessage();
@@ -62,6 +64,23 @@ export default function App() {
   const bulkDoneMut = useBulkDone();
   const bulkArchiveMut = useBulkArchive();
   const bulkReopenMut = useBulkReopen();
+  const pinMut = usePinMessage();
+  const unpinMut = useUnpinMessage();
+
+  const onPin = async (m) => {
+    try {
+      await pinMut.mutateAsync({ id: m.id });
+      toast.success('Vastgezet bovenaan inbox', 'Pinned', {
+        action: { label: 'Ongedaan maken', onClick: () => unpinMut.mutateAsync({ id: m.id }).catch(() => {}) },
+      });
+    } catch (e) { toast.error(e.message); }
+  };
+  const onUnpin = async (m) => {
+    try {
+      await unpinMut.mutateAsync({ id: m.id });
+      toast.info('Niet meer vastgezet', 'Unpinned');
+    } catch (e) { toast.error(e.message); }
+  };
 
   // Undo helper — werkt voor single OR bulk reopen, toont een eigen confirm toast
   const undoAction = (ids) => ({
@@ -248,9 +267,24 @@ export default function App() {
   const shortcutMap = useMemo(() => {
     const map = {
       Escape: () => {
+        if (cmdkOpen) return false; // CommandPalette handles its own Escape
         if (snoozeModal.open || doneModal.open || scheduleModal.open) return false;
         if (selectedMessageId) { setSelectedMessageId(null); return true; }
         if (selectedContactId) { setSelectedContactId(null); return true; }
+        return false;
+      },
+      k: (e) => {
+        if (e.metaKey || e.ctrlKey) {
+          setCmdkOpen(true);
+          return true;
+        }
+        return false;
+      },
+      K: (e) => {
+        if (e.metaKey || e.ctrlKey) {
+          setCmdkOpen(true);
+          return true;
+        }
         return false;
       },
     };
@@ -260,7 +294,7 @@ export default function App() {
       }
     }
     return map;
-  }, [snoozeModal.open, doneModal.open, scheduleModal.open, selectedMessageId, selectedContactId]);
+  }, [cmdkOpen, snoozeModal.open, doneModal.open, scheduleModal.open, selectedMessageId, selectedContactId]);
 
   useKeyboard(shortcutMap);
 
@@ -306,6 +340,8 @@ export default function App() {
             onOpenContact={openContact}
             onBlock={onBlock}
             onArchive={onArchive}
+            onPin={onPin}
+            onUnpin={onUnpin}
             onBulkSnooze={handleBulkSnooze}
             onBulkDone={handleBulkDone}
             onBulkArchive={onBulkArchive}
@@ -416,6 +452,14 @@ export default function App() {
         onClose={() => setScheduleModal({ open: false, contact: null, message: null })}
         contactName={scheduleModal.contact?.name || scheduleModal.message?.contact_name}
         contactEmail={scheduleModal.contact?.email || scheduleModal.message?.contact_email}
+      />
+
+      <CommandPalette
+        open={cmdkOpen}
+        onClose={() => setCmdkOpen(false)}
+        onNavigate={(viewId) => { setView(viewId); setSelectedMessageId(null); }}
+        onOpenMessage={(m) => setSelectedMessageId(m.id)}
+        onOpenContact={(c) => setSelectedContactId(c.id)}
       />
     </div>
   );

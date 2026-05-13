@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useMessages, useSyncAll } from '../../hooks/useMessages.js';
+import { useMemo, useState } from 'react';
+import { useMessages, usePinnedMessages, useSyncAll } from '../../hooks/useMessages.js';
 import { useStats } from '../../hooks/useStats.js';
 import { useToast } from '../../hooks/useToast.jsx';
 import { useSelection, useSelectionShortcuts } from '../../hooks/useSelection.js';
@@ -34,7 +34,7 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, onArchive, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -43,11 +43,20 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
   if (search) params.search = search;
 
   const { data, isLoading } = useMessages(params);
+  const { data: pinnedData } = usePinnedMessages();
   const { data: stats } = useStats();
   const syncAll = useSyncAll();
   const toast = useToast();
 
-  const messages = data?.messages || [];
+  const allMessages = data?.messages || [];
+  const pinned = pinnedData?.messages || [];
+
+  // Filter pinned thread_ids out of the regular list to avoid duplicate rows
+  const pinnedThreadIds = useMemo(() => new Set(pinned.map((m) => m.thread_id).filter(Boolean)), [pinned]);
+  const messages = useMemo(
+    () => allMessages.filter((m) => !m.thread_id || !pinnedThreadIds.has(m.thread_id)),
+    [allMessages, pinnedThreadIds],
+  );
 
   const selection = useSelection(messages);
   useSelectionShortcuts({
@@ -114,6 +123,30 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
           <DailySummaryCard onOpenContact={onOpenContact} />
           <TodayWidget />
         </div>
+        {pinned.length > 0 ? (
+          <div className="mx-8 mb-4">
+            <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-700">
+              <i className="fa-solid fa-thumbtack" /> Vastgezet · {pinned.length}
+            </div>
+            <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm ring-1 ring-amber-100">
+              {pinned.map((m) => (
+                <MessageRow
+                  key={`pin-${m.id}`}
+                  message={m}
+                  selected={selectedId === m.id}
+                  onClick={() => onOpenMessage(m)}
+                  onSnooze={onSnooze}
+                  onDone={onDone}
+                  onSchedule={onSchedule}
+                  onArchive={onArchive}
+                  onUnpin={onUnpin}
+                  isPinned
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="mx-8 mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <div className="py-16"><LoadingSpinner label="Berichten laden…" /></div>
@@ -143,6 +176,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
                   onSchedule={onSchedule}
                   onArchive={onArchive}
                   onBlock={onBlock}
+                  onPin={onPin}
                   selectable
                   isSelected={selection.selectedIds.has(m.id)}
                   onToggleSelect={selection.toggle}

@@ -88,6 +88,57 @@ router.get('/', (req, res) => {
   res.json({ messages: rows, total, limit, offset });
 });
 
+// GET /api/messages/pinned — vastgezette gesprekken (1 row per thread, met laatste bericht)
+router.get('/pinned', (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      m.*,
+      c.name AS contact_name,
+      c.company AS contact_company,
+      c.email AS contact_email,
+      c.phone AS contact_phone,
+      c.avatar_initials AS contact_initials,
+      c.avatar_color AS contact_color,
+      ch.type AS channel_type,
+      ch.label AS channel_label,
+      ch.account_email AS channel_account,
+      p.pinned_at
+    FROM pinned_threads p
+    JOIN messages m ON m.id = (
+      SELECT id FROM messages
+      WHERE thread_id = p.thread_id
+      ORDER BY received_at DESC
+      LIMIT 1
+    )
+    LEFT JOIN contacts c ON c.id = m.contact_id
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    ORDER BY p.pinned_at DESC
+    LIMIT 10
+  `).all();
+  res.json({ messages: rows, total: rows.length });
+});
+
+// POST /api/messages/:id/pin — pin de thread van dit bericht
+router.post('/:id/pin', (req, res) => {
+  const m = db.prepare('SELECT thread_id, channel_id, contact_id FROM messages WHERE id = ?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Message not found' });
+  if (!m.thread_id) return res.status(400).json({ error: 'Message has no thread_id (cannot pin)' });
+
+  db.prepare(`
+    INSERT INTO pinned_threads (thread_id, channel_id, contact_id) VALUES (?, ?, ?)
+    ON CONFLICT(thread_id) DO UPDATE SET pinned_at = datetime('now')
+  `).run(m.thread_id, m.channel_id, m.contact_id);
+  res.json({ ok: true, thread_id: m.thread_id, pinned: true });
+});
+
+// DELETE /api/messages/:id/pin — unpin de thread van dit bericht
+router.delete('/:id/pin', (req, res) => {
+  const m = db.prepare('SELECT thread_id FROM messages WHERE id = ?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Message not found' });
+  const r = db.prepare('DELETE FROM pinned_threads WHERE thread_id = ?').run(m.thread_id);
+  res.json({ ok: true, thread_id: m.thread_id, removed: r.changes });
+});
+
 // GET /api/messages/:id
 router.get('/:id', (req, res) => {
   const row = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);

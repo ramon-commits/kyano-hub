@@ -4,7 +4,7 @@ import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Badge from '../shared/Badge.jsx';
 import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
-export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, onBlock, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
+export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, onBlock, onPin, onUnpin, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
 
@@ -70,9 +70,23 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {isPinned ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onUnpin?.(m); }}
+            title="Niet meer vastzetten"
+            className="grid h-7 w-7 place-items-center rounded-md text-amber-500 transition-colors hover:bg-amber-50 hover:text-amber-700"
+          >
+            <i className="fa-solid fa-thumbtack text-sm" />
+          </button>
+        ) : null}
         <span className="text-xs text-gray-400 group-hover:hidden">{timeAgo(m.received_at)}</span>
 
         <div className="hidden items-center gap-0.5 group-hover:flex">
+          {onPin && !isPinned ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onPin(m); }} title="Vastzetten" hoverColor="hover:bg-amber-50 hover:text-amber-700">
+              <i className="fa-solid fa-thumbtack" />
+            </ActionBtn>
+          ) : null}
           {onSnooze ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onSnooze(m); }} title="Snooze" hoverColor="hover:bg-orange-50 hover:text-orange-700">
               <i className="fa-solid fa-clock" />

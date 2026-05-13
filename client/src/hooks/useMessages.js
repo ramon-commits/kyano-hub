@@ -153,6 +153,33 @@ export function useBulkReopen() {
   });
 }
 
+export function usePinnedMessages() {
+  return useQuery({
+    queryKey: ['messages', 'pinned'],
+    queryFn: () => api.get('/messages/pinned'),
+  });
+}
+
+export function usePinMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => api.post(`/messages/${id}/pin`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
+export function useUnpinMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => api.delete(`/messages/${id}/pin`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
 export function useBulkSnooze() {
   const qc = useQueryClient();
   return useMutation({

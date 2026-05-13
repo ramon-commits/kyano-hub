@@ -209,6 +209,27 @@ CREATE TABLE IF NOT EXISTS project_summaries (
   last_summary_update TEXT
 );
 
+-- Pinned threads (vastgezette gesprekken bovenaan inbox)
+CREATE TABLE IF NOT EXISTS pinned_threads (
+  thread_id TEXT PRIMARY KEY,
+  channel_id TEXT,
+  contact_id TEXT REFERENCES contacts(id),
+  pinned_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pinned_pinned_at ON pinned_threads(pinned_at DESC);
+
+-- Quick reply templates (/-shortcuts in composer)
+CREATE TABLE IF NOT EXISTS quick_replies (
+  id TEXT PRIMARY KEY,
+  shortcut TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  channel_type TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_quick_replies_shortcut ON quick_replies(shortcut);
+
 -- Full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
   snippet, subject, done_note,

@@ -29,6 +29,7 @@ import exportRouter from './routes/export.js';
 import settingsRouter from './routes/settings.js';
 import eventsRouter from './routes/events.js';
 import adminRouter from './routes/admin.js';
+import quickRepliesRouter from './routes/quick-replies.js';
 
 const PORT = parseInt(process.env.PORT) || 3001;
 
@@ -58,6 +59,7 @@ app.use('/api/export', exportRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/quick-replies', quickRepliesRouter);
 
 // OAuth callback (Google redirect target — niet onder /api)
 app.use('/auth', callbackRouter);
