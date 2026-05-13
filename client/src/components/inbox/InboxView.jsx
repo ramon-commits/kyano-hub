@@ -6,7 +6,7 @@ import { useSelection, useSelectionShortcuts } from '../../hooks/useSelection.js
 import MessageRow from './MessageRow.jsx';
 import MessageFilters from './MessageFilters.jsx';
 import DailySummaryCard from './DailySummaryCard.jsx';
-import TodayWidget from './TodayWidget.jsx';
+import AgendaWidget from './AgendaWidget.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import BulkActionBar from '../shared/BulkActionBar.jsx';
@@ -34,7 +34,7 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -117,73 +117,86 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
         />
       </div>
 
-      {/* Lijst */}
+      {/* Lijst + agenda */}
       <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
         <div className="mx-8 mt-6">
           <DailySummaryCard onOpenContact={onOpenContact} />
-          <TodayWidget />
         </div>
-        {pinned.length > 0 ? (
-          <div className="mx-8 mb-4">
-            <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-700">
-              <i className="fa-solid fa-thumbtack" /> Vastgezet · {pinned.length}
+
+        {/* 2-kolom op lg+, gestapeld op kleiner scherm (agenda boven berichten) */}
+        <div className="mx-8 mb-8 flex flex-col gap-6 lg:flex-row">
+          {/* Agenda kolom (rechts op lg, boven op mobile) */}
+          <aside className="order-1 lg:order-2 lg:w-[340px] lg:shrink-0">
+            <div className="lg:sticky lg:top-2">
+              <AgendaWidget onNavigate={onNavigate} onOpenContact={onOpenContact} />
             </div>
-            <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm ring-1 ring-amber-100">
-              {pinned.map((m) => (
-                <MessageRow
-                  key={`pin-${m.id}`}
-                  message={m}
-                  selected={selectedId === m.id}
-                  onClick={() => onOpenMessage(m)}
-                  onSnooze={onSnooze}
-                  onDone={onDone}
-                  onSchedule={onSchedule}
-                  onArchive={onArchive}
-                  onUnpin={onUnpin}
-                  isPinned
+          </aside>
+
+          {/* Berichten kolom */}
+          <div className="order-2 min-w-0 flex-1 space-y-4 lg:order-1">
+            {pinned.length > 0 ? (
+              <div>
+                <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-700">
+                  <i className="fa-solid fa-thumbtack" /> Vastgezet · {pinned.length}
+                </div>
+                <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm ring-1 ring-amber-100">
+                  {pinned.map((m) => (
+                    <MessageRow
+                      key={`pin-${m.id}`}
+                      message={m}
+                      selected={selectedId === m.id}
+                      onClick={() => onOpenMessage(m)}
+                      onSnooze={onSnooze}
+                      onDone={onDone}
+                      onSchedule={onSchedule}
+                      onArchive={onArchive}
+                      onUnpin={onUnpin}
+                      isPinned
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+              {isLoading ? (
+                <div className="py-16"><LoadingSpinner label="Berichten laden…" /></div>
+              ) : messages.length === 0 ? (
+                <EmptyState
+                  icon={search ? 'magnifying-glass' : 'inbox'}
+                  title={search ? 'Geen resultaten' : 'Inbox zero! Alles is afgehandeld.'}
+                  description={search ? 'Geen berichten die matchen met je zoekterm.' : 'Alle berichten zijn afgehandeld of gesnoozet. Tijd voor koffie.'}
                 />
-              ))}
+              ) : (
+                <>
+                  <SelectAllHeader
+                    allSelected={selection.allSelected}
+                    someSelected={selection.someSelected}
+                    count={selection.count}
+                    total={messages.length}
+                    onToggleAll={selection.toggleAll}
+                  />
+                  {messages.map((m) => (
+                    <MessageRow
+                      key={m.id}
+                      message={m}
+                      selected={selectedId === m.id}
+                      onClick={() => onOpenMessage(m)}
+                      onSnooze={onSnooze}
+                      onDone={onDone}
+                      onSchedule={onSchedule}
+                      onArchive={onArchive}
+                      onBlock={onBlock}
+                      onPin={onPin}
+                      selectable
+                      isSelected={selection.selectedIds.has(m.id)}
+                      onToggleSelect={selection.toggle}
+                    />
+                  ))}
+                </>
+              )}
             </div>
           </div>
-        ) : null}
-
-        <div className="mx-8 mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          {isLoading ? (
-            <div className="py-16"><LoadingSpinner label="Berichten laden…" /></div>
-          ) : messages.length === 0 ? (
-            <EmptyState
-              icon={search ? 'magnifying-glass' : 'inbox'}
-              title={search ? 'Geen resultaten' : 'Inbox zero! Alles is afgehandeld.'}
-              description={search ? 'Geen berichten die matchen met je zoekterm.' : 'Alle berichten zijn afgehandeld of gesnoozet. Tijd voor koffie.'}
-            />
-          ) : (
-            <>
-              <SelectAllHeader
-                allSelected={selection.allSelected}
-                someSelected={selection.someSelected}
-                count={selection.count}
-                total={messages.length}
-                onToggleAll={selection.toggleAll}
-              />
-              {messages.map((m) => (
-                <MessageRow
-                  key={m.id}
-                  message={m}
-                  selected={selectedId === m.id}
-                  onClick={() => onOpenMessage(m)}
-                  onSnooze={onSnooze}
-                  onDone={onDone}
-                  onSchedule={onSchedule}
-                  onArchive={onArchive}
-                  onBlock={onBlock}
-                  onPin={onPin}
-                  selectable
-                  isSelected={selection.selectedIds.has(m.id)}
-                  onToggleSelect={selection.toggle}
-                />
-              ))}
-            </>
-          )}
         </div>
 
         <BulkActionBar

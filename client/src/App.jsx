@@ -348,6 +348,7 @@ export default function App() {
             onArchive={onArchive}
             onPin={onPin}
             onUnpin={onUnpin}
+            onNavigate={(viewId) => { setView(viewId); setSelectedMessageId(null); }}
             onBulkSnooze={handleBulkSnooze}
             onBulkDone={handleBulkDone}
             onBulkArchive={onBulkArchive}
