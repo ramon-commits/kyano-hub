@@ -131,6 +131,39 @@ export function useArchiveMessage() {
   });
 }
 
+export function useBulkArchive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids }) => api.post('/messages/bulk/archive', { ids }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
+export function useBulkSnooze() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, snoozed_until }) => api.post('/messages/bulk/snooze', { ids, snoozed_until }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
+export function useBulkDone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, note, category }) => api.post('/messages/bulk/done', { ids, note, category }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
 export function useContactMessages(contactId) {
   return useQuery({
     queryKey: ['contact-messages', contactId],

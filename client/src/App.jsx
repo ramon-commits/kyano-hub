@@ -18,7 +18,7 @@ import SnoozeModal from './components/modals/SnoozeModal.jsx';
 import DoneModal from './components/modals/DoneModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
 import { useHealth } from './hooks/useStats.js';
-import { useArchiveMessage, useDoneMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useWaitingMessage } from './hooks/useMessages.js';
+import { useArchiveMessage, useBulkArchive, useBulkDone, useBulkSnooze, useDoneMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useWaitingMessage } from './hooks/useMessages.js';
 import { useAuthStatus } from './hooks/useChannels.js';
 import { useToast } from './hooks/useToast.jsx';
 import { useKeyboard } from './hooks/useKeyboard.js';
@@ -47,8 +47,8 @@ export default function App() {
   const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [selectedContactId, setSelectedContactId] = useState(null);
 
-  const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null });
-  const [doneModal, setDoneModal] = useState({ open: false, message: null });
+  const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null, bulkIds: null });
+  const [doneModal, setDoneModal] = useState({ open: false, message: null, bulkIds: null });
   const [scheduleModal, setScheduleModal] = useState({ open: false, contact: null, message: null });
 
   const toast = useToast();
@@ -58,6 +58,9 @@ export default function App() {
   const waitingMut = useWaitingMessage();
   const priorityMut = usePriorityMessage();
   const archiveMut = useArchiveMessage();
+  const bulkSnoozeMut = useBulkSnooze();
+  const bulkDoneMut = useBulkDone();
+  const bulkArchiveMut = useBulkArchive();
 
   // Handlers
   const openMessage = useCallback((m) => setSelectedMessageId(m.id), []);
@@ -65,8 +68,10 @@ export default function App() {
   const openContact = useCallback((c) => setSelectedContactId(c.id), []);
   const closeContact = useCallback(() => setSelectedContactId(null), []);
 
-  const handleSnooze = (m) => setSnoozeModal({ open: true, message: m });
-  const handleDone = (m) => setDoneModal({ open: true, message: m });
+  const handleSnooze = (m) => setSnoozeModal({ open: true, message: m, bulkIds: null });
+  const handleDone = (m) => setDoneModal({ open: true, message: m, bulkIds: null });
+  const handleBulkSnooze = (ids) => setSnoozeModal({ open: true, message: null, bulkIds: ids });
+  const handleBulkDone = (ids) => setDoneModal({ open: true, message: null, bulkIds: ids });
   const handleSchedule = (target) => {
     // target kan een message of contact zijn
     const isContact = target && !('channel_id' in target);
@@ -74,13 +79,17 @@ export default function App() {
   };
 
   const onSnooze = async (snoozedUntilISO, label) => {
-    const msg = snoozeModal.message;
-    if (!msg) return;
-    setSnoozeModal({ open: false, message: null });
+    const { message: msg, bulkIds } = snoozeModal;
+    setSnoozeModal({ open: false, message: null, bulkIds: null });
     try {
-      await snoozeMut.mutateAsync({ id: msg.id, snoozed_until: snoozedUntilISO });
-      toast.success(`Komt terug ${label}`, '⏰ Snoozed');
-      if (selectedMessageId === msg.id) setSelectedMessageId(null);
+      if (bulkIds && bulkIds.length) {
+        const r = await bulkSnoozeMut.mutateAsync({ ids: bulkIds, snoozed_until: snoozedUntilISO });
+        toast.success(`${r.updated} berichten komen terug ${label}`, '⏰ Snoozed');
+      } else if (msg) {
+        await snoozeMut.mutateAsync({ id: msg.id, snoozed_until: snoozedUntilISO });
+        toast.success(`Komt terug ${label}`, '⏰ Snoozed');
+        if (selectedMessageId === msg.id) setSelectedMessageId(null);
+      }
     } catch (e) {
       toast.error(e.message, 'Snooze mislukt');
     }
@@ -89,7 +98,7 @@ export default function App() {
   const onWaiting = async () => {
     const msg = snoozeModal.message;
     if (!msg) return;
-    setSnoozeModal({ open: false, message: null });
+    setSnoozeModal({ open: false, message: null, bulkIds: null });
     try {
       await waitingMut.mutateAsync({ id: msg.id });
       toast.info('Status: wacht op reactie', '⏳ Bewaard');
@@ -100,15 +109,32 @@ export default function App() {
   };
 
   const onDone = async ({ category, note }) => {
-    const msg = doneModal.message;
-    if (!msg) return;
-    setDoneModal({ open: false, message: null });
+    const { message: msg, bulkIds } = doneModal;
+    setDoneModal({ open: false, message: null, bulkIds: null });
     try {
-      await doneMut.mutateAsync({ id: msg.id, category, note });
-      toast.success('Staat in je logboek', '✅ Afgehandeld');
-      if (selectedMessageId === msg.id) setSelectedMessageId(null);
+      if (bulkIds && bulkIds.length) {
+        const r = await bulkDoneMut.mutateAsync({ ids: bulkIds, note, category });
+        toast.success(`${r.updated} berichten in je logboek`, '✅ Afgehandeld');
+      } else if (msg) {
+        await doneMut.mutateAsync({ id: msg.id, category, note });
+        toast.success('Staat in je logboek', '✅ Afgehandeld');
+        if (selectedMessageId === msg.id) setSelectedMessageId(null);
+      }
     } catch (e) {
       toast.error(e.message);
+    }
+  };
+
+  const onBulkArchive = async (ids) => {
+    if (!ids?.length) return false;
+    try {
+      const r = await bulkArchiveMut.mutateAsync({ ids });
+      toast.info(`${r.archived} berichten naar archief`, '🗑️ Gearchiveerd');
+      if (selectedMessageId && ids.includes(selectedMessageId)) setSelectedMessageId(null);
+      return true;
+    } catch (e) {
+      toast.error(e.message);
+      return false;
     }
   };
 
@@ -142,8 +168,11 @@ export default function App() {
   };
 
   const onAIPlaceholder = () => {
-    toast.info('AI varianten worden gebouwd in stap 11', '🤖 Komt eraan');
+    toast.info('AI varianten worden gebouwd in stap 12 (AI integratie)', '🤖 Komt eraan');
   };
+  const onImproveNL = () => toast.info('✍️ NL verbeteren wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
+  const onTranslate = () => toast.info('🌍 Vertalen wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
+  const onFollowUp = () => toast.info('↩️ Follow-up wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
 
   const qc = useQueryClient();
   const onBlock = async (m) => {
@@ -158,6 +187,33 @@ export default function App() {
       qc.invalidateQueries({ queryKey: ['stats'] });
       if (selectedMessageId === m.id) setSelectedMessageId(null);
     } catch (e) { toast.error(e.message); }
+  };
+
+  const onBulkBlock = async (ids, selectedMessages) => {
+    if (!ids?.length) return false;
+    const emails = [...new Set((selectedMessages || []).map((m) => m.contact_email).filter(Boolean))];
+    if (emails.length === 0) {
+      toast.warning('Geen email-afzenders in selectie om te blokkeren');
+      return false;
+    }
+    const ok = confirm(`Blokkeer ${emails.length} afzender${emails.length === 1 ? '' : 's'}?\n\n${emails.slice(0, 5).join('\n')}${emails.length > 5 ? `\n…en ${emails.length - 5} meer` : ''}\n\nToekomstige berichten worden automatisch gearchiveerd.`);
+    if (!ok) return false;
+    try {
+      const results = await Promise.allSettled(
+        emails.map((email) => api.post('/settings/sender-rules', { email_pattern: email, rule: 'block' })),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      await bulkArchiveMut.mutateAsync({ ids });
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      if (failed) {
+        toast.warning(`${emails.length - failed}/${emails.length} afzenders geblokkeerd — ${failed} fout(en)`, '🚫 Deels geblokkeerd');
+      } else {
+        toast.success(`${emails.length} afzender${emails.length === 1 ? '' : 's'} geblokkeerd + ${ids.length} bericht${ids.length === 1 ? '' : 'en'} gearchiveerd`, '🚫 Geblokkeerd');
+      }
+      if (selectedMessageId && ids.includes(selectedMessageId)) setSelectedMessageId(null);
+      return true;
+    } catch (e) { toast.error(e.message); return false; }
   };
 
   // Auth status — voor welcome screen detectie
@@ -207,15 +263,47 @@ export default function App() {
           onUrgent={onUrgent}
           onArchive={onArchive}
           onAI={onAIPlaceholder}
+          onImproveNL={onImproveNL}
+          onTranslate={onTranslate}
+          onFollowUp={onFollowUp}
         />
       );
     }
 
     switch (view) {
       case 'inbox':
-        return <InboxView onOpenMessage={openMessage} onSnooze={handleSnooze} onDone={handleDone} onSchedule={handleSchedule} onOpenContact={openContact} onBlock={onBlock} selectedId={selectedMessageId} />;
+        return (
+          <InboxView
+            onOpenMessage={openMessage}
+            onSnooze={handleSnooze}
+            onDone={handleDone}
+            onSchedule={handleSchedule}
+            onOpenContact={openContact}
+            onBlock={onBlock}
+            onArchive={onArchive}
+            onBulkSnooze={handleBulkSnooze}
+            onBulkDone={handleBulkDone}
+            onBulkArchive={onBulkArchive}
+            onBulkBlock={onBulkBlock}
+            selectedId={selectedMessageId}
+          />
+        );
       case 'snoozed':
-        return <SnoozedView onOpenMessage={openMessage} onReopen={onReopen} onDone={handleDone} onSnooze={handleSnooze} selectedId={selectedMessageId} />;
+        return (
+          <SnoozedView
+            onOpenMessage={openMessage}
+            onReopen={onReopen}
+            onDone={handleDone}
+            onSnooze={handleSnooze}
+            onArchive={onArchive}
+            onBlock={onBlock}
+            onBulkSnooze={handleBulkSnooze}
+            onBulkDone={handleBulkDone}
+            onBulkArchive={onBulkArchive}
+            onBulkBlock={onBulkBlock}
+            selectedId={selectedMessageId}
+          />
+        );
       case 'logboek':
         return <LogboekView onOpenMessage={openMessage} onReopen={onReopen} selectedId={selectedMessageId} />;
       case 'contacten':
@@ -277,17 +365,25 @@ export default function App() {
 
       <SnoozeModal
         open={snoozeModal.open}
-        onClose={() => setSnoozeModal({ open: false, message: null })}
+        onClose={() => setSnoozeModal({ open: false, message: null, bulkIds: null })}
         onSnooze={onSnooze}
-        onWaiting={onWaiting}
-        contactName={snoozeModal.message?.contact_name}
+        onWaiting={snoozeModal.bulkIds ? null : onWaiting}
+        contactName={
+          snoozeModal.bulkIds
+            ? `${snoozeModal.bulkIds.length} bericht${snoozeModal.bulkIds.length === 1 ? '' : 'en'}`
+            : snoozeModal.message?.contact_name
+        }
       />
 
       <DoneModal
         open={doneModal.open}
-        onClose={() => setDoneModal({ open: false, message: null })}
+        onClose={() => setDoneModal({ open: false, message: null, bulkIds: null })}
         onDone={onDone}
-        contactName={doneModal.message?.contact_name}
+        contactName={
+          doneModal.bulkIds
+            ? `${doneModal.bulkIds.length} bericht${doneModal.bulkIds.length === 1 ? '' : 'en'}`
+            : doneModal.message?.contact_name
+        }
       />
 
       <ScheduleModal

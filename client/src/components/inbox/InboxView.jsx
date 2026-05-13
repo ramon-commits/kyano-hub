@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useMessages, useSyncAll } from '../../hooks/useMessages.js';
 import { useStats } from '../../hooks/useStats.js';
 import { useToast } from '../../hooks/useToast.jsx';
+import { useSelection, useSelectionShortcuts } from '../../hooks/useSelection.js';
 import MessageRow from './MessageRow.jsx';
 import MessageFilters from './MessageFilters.jsx';
 import DailySummaryCard from './DailySummaryCard.jsx';
 import TodayWidget from './TodayWidget.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
+import BulkActionBar from '../shared/BulkActionBar.jsx';
 
 function MetricCard({ icon, label, value, color }) {
   return (
@@ -32,7 +34,7 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, onArchive, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -46,6 +48,15 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
   const toast = useToast();
 
   const messages = data?.messages || [];
+
+  const selection = useSelection(messages);
+  useSelectionShortcuts({
+    count: selection.count,
+    onSelectAll: selection.selectAll,
+    onClear: selection.clear,
+  });
+
+  const selectedMessages = messages.filter((m) => selection.selectedIds.has(m.id));
 
   const handleSync = async () => {
     try {
@@ -113,21 +124,71 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
               description={search ? 'Geen berichten die matchen met je zoekterm.' : 'Alle berichten zijn afgehandeld of gesnoozet. Tijd voor koffie.'}
             />
           ) : (
-            messages.map((m) => (
-              <MessageRow
-                key={m.id}
-                message={m}
-                selected={selectedId === m.id}
-                onClick={() => onOpenMessage(m)}
-                onSnooze={onSnooze}
-                onDone={onDone}
-                onSchedule={onSchedule}
-                onBlock={onBlock}
+            <>
+              <SelectAllHeader
+                allSelected={selection.allSelected}
+                someSelected={selection.someSelected}
+                count={selection.count}
+                total={messages.length}
+                onToggleAll={selection.toggleAll}
               />
-            ))
+              {messages.map((m) => (
+                <MessageRow
+                  key={m.id}
+                  message={m}
+                  selected={selectedId === m.id}
+                  onClick={() => onOpenMessage(m)}
+                  onSnooze={onSnooze}
+                  onDone={onDone}
+                  onSchedule={onSchedule}
+                  onArchive={onArchive}
+                  onBlock={onBlock}
+                  selectable
+                  isSelected={selection.selectedIds.has(m.id)}
+                  onToggleSelect={selection.toggle}
+                />
+              ))}
+            </>
           )}
         </div>
+
+        <BulkActionBar
+          count={selection.count}
+          onSnooze={() => onBulkSnooze?.([...selection.selectedIds])}
+          onDone={() => onBulkDone?.([...selection.selectedIds])}
+          onArchive={async () => {
+            const ids = [...selection.selectedIds];
+            const ok = await onBulkArchive?.(ids);
+            if (ok !== false) selection.clear();
+          }}
+          onBlock={async () => {
+            const ok = await onBulkBlock?.([...selection.selectedIds], selectedMessages);
+            if (ok !== false) selection.clear();
+          }}
+          onClear={selection.clear}
+        />
       </div>
+    </div>
+  );
+}
+
+function SelectAllHeader({ allSelected, someSelected, count, total, onToggleAll }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/60 px-5 py-2.5">
+      <input
+        type="checkbox"
+        checked={allSelected}
+        ref={(el) => { if (el) el.indeterminate = someSelected; }}
+        onChange={onToggleAll}
+        className="h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500/30"
+        aria-label="Selecteer alle berichten"
+      />
+      <span className="text-xs font-medium text-gray-600">
+        {count > 0 ? `${count} van ${total} geselecteerd` : `Selecteer alle (${total})`}
+      </span>
+      <span className="ml-auto text-[11px] text-gray-400">
+        Shift+klik voor reeks · ⌘A = alles · Esc = wissen
+      </span>
     </div>
   );
 }

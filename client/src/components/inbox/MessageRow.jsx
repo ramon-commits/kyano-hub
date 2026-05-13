@@ -4,7 +4,7 @@ import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Badge from '../shared/Badge.jsx';
 import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
-export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, onBlock, showWakeUp, showDoneInfo }) {
+export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, onBlock, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
 
@@ -13,9 +13,20 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
       onClick={onClick}
       className={cn(
         'group flex cursor-pointer items-center gap-4 border-b border-gray-100 px-5 py-[14px] transition-colors last:border-b-0',
-        selected ? 'bg-blue-50/60' : 'hover:bg-gray-50',
+        isSelected ? 'bg-blue-50' : selected ? 'bg-blue-50/60' : 'hover:bg-gray-50',
       )}
     >
+      {selectable ? (
+        <input
+          type="checkbox"
+          checked={!!isSelected}
+          onClick={(e) => { e.stopPropagation(); onToggleSelect?.(m.id, e); }}
+          onChange={() => { /* handled via onClick to capture shift key */ }}
+          className="h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500/30"
+          aria-label={`Selecteer bericht van ${m.contact_name || 'onbekend'}`}
+        />
+      ) : null}
+
       <Avatar
         name={m.contact_name}
         initials={m.contact_initials}

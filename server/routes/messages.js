@@ -389,6 +389,21 @@ router.post('/bulk/done', (req, res) => {
   res.json({ ok: true, updated });
 });
 
+// POST /api/messages/bulk/archive
+router.post('/bulk/archive', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+
+  const stmt = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ?`);
+  const tx = db.transaction(() => {
+    let n = 0;
+    for (const id of ids) n += stmt.run(id).changes;
+    return n;
+  });
+  const updated = tx();
+  res.json({ ok: true, updated, archived: updated });
+});
+
 // DELETE /api/messages/:id (soft delete -> archived)
 router.delete('/:id', (req, res) => {
   const result = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ?`)

@@ -18,6 +18,9 @@ export default function ConversationView({
   onUrgent,
   onArchive,
   onAI,
+  onImproveNL,
+  onTranslate,
+  onFollowUp,
 }) {
   const { data: m, isLoading } = useMessage(messageId);
   const { data: thread } = useThread(messageId);
@@ -123,6 +126,9 @@ export default function ConversationView({
         onSend={handleSend}
         onCopy={handleCopy}
         onAI={() => onAI?.(m)}
+        onImproveNL={() => onImproveNL?.(m)}
+        onTranslate={() => onTranslate?.(m)}
+        onFollowUp={() => onFollowUp?.(m)}
       />
 
       <ThreadStatusBar

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export default function ReplyComposer({ channelType, defaultAccount, sending, onSend, onCopy, onAI }) {
+export default function ReplyComposer({ channelType, defaultAccount, sending, onSend, onCopy, onAI, onImproveNL, onTranslate, onFollowUp }) {
   const [text, setText] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [cc, setCc] = useState('');
@@ -117,6 +117,34 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
         >
           🤖 AI varianten
         </button>
+
+        <span className="mx-1 hidden h-6 w-px self-center bg-gray-200 sm:inline-block" />
+
+        <button
+          onClick={onImproveNL}
+          disabled={sending}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
+          title="Verbeter de Nederlandse schrijfstijl (stap 12)"
+        >
+          ✍️ Verbeter NL
+        </button>
+        <button
+          onClick={onTranslate}
+          disabled={sending}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
+          title="Vertaal naar andere taal (stap 12)"
+        >
+          🌍 Vertaal
+        </button>
+        <button
+          onClick={onFollowUp}
+          disabled={sending}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
+          title="Schrijf een follow-up suggestie (stap 12)"
+        >
+          ↩️ Follow-up
+        </button>
+
         {text.trim() ? (
           <span className="ml-auto text-xs text-gray-400">{text.trim().length} tekens</span>
         ) : null}
