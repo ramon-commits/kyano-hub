@@ -92,12 +92,31 @@ export default function UnipileSettings() {
             ))}
           </div>
         ) : null}
-        <button
-          onClick={refresh}
-          className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-        >
-          🔄 Sync nu
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={refresh}
+            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            🔄 Sync nu
+          </button>
+          <button
+            onClick={async () => {
+              if (!confirm('Alle WhatsApp/LinkedIn/Instagram berichten worden verwijderd en opnieuw opgehaald met de nieuwe namen-extractie. Doorgaan?')) return;
+              try {
+                const r = await api.post('/admin/resync-unipile');
+                toast.success(`${r.deleted_messages} berichten gewist + ${r.resync?.total_new || 0} opnieuw gesynced`, '🔁 Reset compleet');
+                qc.invalidateQueries({ queryKey: ['messages'] });
+                qc.invalidateQueries({ queryKey: ['stats'] });
+                qc.invalidateQueries({ queryKey: ['channels'] });
+                refresh();
+              } catch (e) { toast.error(e.message || 'Resync mislukt'); }
+            }}
+            className="rounded-md border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50"
+            title="Wist alle Unipile berichten en haalt ze opnieuw op met verbeterde namen/sender extractie"
+          >
+            🔁 Reset & resync (na namen-fix)
+          </button>
+        </div>
       </div>
     );
   }

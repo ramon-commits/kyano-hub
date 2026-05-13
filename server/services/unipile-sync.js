@@ -3,7 +3,9 @@ import db from '../db/init.js';
 import { matchContact } from './contact-matcher.js';
 import * as unipile from './unipile.js';
 
-// Mapping helpers
+const DEBUG = process.env.UNIPILE_DEBUG === '1';
+
+// ===== Mapping helpers =====
 function getChannelByUnipileAccount(unipileAccountId) {
   const rows = db.prepare('SELECT * FROM channels WHERE config_json IS NOT NULL').all();
   for (const r of rows) {
@@ -23,11 +25,9 @@ function setChannelUnipileAccount(channelId, unipileAccountId) {
   db.prepare('UPDATE channels SET config_json = ? WHERE id = ?').run(JSON.stringify(cfg), channelId);
 }
 
-// Auto-map Unipile accounts → lokale channels (eerste WA → wa-1, etc.)
 function autoMapAccounts(accounts) {
   const buckets = { whatsapp: ['wa-1', 'wa-2'], linkedin: ['li-1'], instagram: ['ig-1'] };
   const used = new Set();
-  // Hou rekening met bestaande mappings
   for (const r of db.prepare("SELECT id, config_json FROM channels WHERE config_json IS NOT NULL").all()) {
     try {
       const cfg = JSON.parse(r.config_json);
@@ -43,7 +43,6 @@ function autoMapAccounts(accounts) {
       mapping[acc.id] = getChannelByUnipileAccount(acc.id).id;
       continue;
     }
-    // Find first available channel ID for this type
     const availableSlot = buckets[channelType].find((id) => !used.has(id));
     if (!availableSlot) continue;
     setChannelUnipileAccount(availableSlot, acc.id);
@@ -54,55 +53,191 @@ function autoMapAccounts(accounts) {
   return mapping;
 }
 
-function detectDirection(msg, accountId) {
-  // Unipile: msg.is_sender of msg.sender_id === me
-  if (typeof msg.is_sender === 'boolean') return msg.is_sender ? 'outbound' : 'inbound';
-  if (msg.from?.is_self) return 'outbound';
-  return 'inbound';
+// ===== Real Unipile field parsing (op basis van debug-logs) =====
+//
+// Chat object heeft:
+//   - name: null (in 1:1) of de groepsnaam (in group chats)
+//   - type: 0 (1:1) of !=0 (group)
+//   - attendee_provider_id: opaque @lid id (1:1)
+//   - attendee_public_identifier: phone in WA format "31xxxxx@s.whatsapp.net" (1:1)
+//   - provider_id: zelfde phone (1:1)
+//
+// Message object heeft:
+//   - is_sender: 0 of 1 (NIET boolean!)
+//   - sender_id: opaque @lid id (zoals "45921823887470@lid")
+//   - sender_attendee_id: opaque attendee uuid
+//   - sender_public_identifier: phone "31xxxxx@s.whatsapp.net"
+//   - text: bericht inhoud
+//   - timestamp: ISO
+//
+// Voor groep chats: namen zitten in /api/v1/chats/{id}/attendees endpoint.
+
+function isOutbound(msg) {
+  // is_sender is numeriek (0 of 1)
+  if (msg.is_sender === 1 || msg.is_sender === true) return true;
+  if (msg.is_sender === 0 || msg.is_sender === false) return false;
+  // Fallbacks voor andere shapes
+  if (msg.from?.is_self === true) return true;
+  if (msg.sender?.is_self === true) return true;
+  if (msg.from_me === true) return true;
+  return false;
 }
 
-function extractContactInfo(chat, msg, channelType) {
-  // Probeer attendees uit chat te halen
-  const attendees = chat.attendees || chat.participants || [];
-  const other = attendees.find((a) => !a.is_self) || attendees[0];
-  if (!other) {
+// Trim WhatsApp suffix (@s.whatsapp.net of @lid) en LinkedIn (URN: prefix etc)
+function cleanPhone(rawId) {
+  if (!rawId || typeof rawId !== 'string') return null;
+  // WhatsApp public_identifier: "31642602103@s.whatsapp.net"
+  const m = rawId.match(/^(\d+)@s\.whatsapp\.net$/);
+  if (m) return '+' + m[1];
+  // WA @lid format (opaque LID) — geen telefoonnummer, return null
+  if (rawId.endsWith('@lid')) return null;
+  // LinkedIn opaque ID — geen phone
+  if (rawId.startsWith('ACo')) return null;
+  // Andere: alleen cijfers? gebruik als phone
+  if (/^\+?\d{6,}$/.test(rawId)) return rawId.startsWith('+') ? rawId : ('+' + rawId);
+  return null;
+}
+
+// Bouw een attendee-map { id → { name, phone } } voor naam-resolutie
+async function buildAttendeeMap(chatId) {
+  const map = new Map();
+  try {
+    const attendees = await unipile.getChatAttendees(chatId);
+    if (DEBUG && attendees?.length) {
+      console.log(`ATTENDEES voor chat ${chatId}:`, JSON.stringify(attendees, null, 2).slice(0, 2000));
+    }
+    for (const a of attendees) {
+      const name = a.name || a.display_name || a.full_name || a.public_identifier || null;
+      const phone = cleanPhone(a.public_identifier || a.provider_id);
+      // Alle mogelijke IDs waar een message naar kan refereren:
+      const keys = [a.id, a.provider_id, a.public_identifier, a.attendee_provider_id]
+        .filter(Boolean);
+      for (const k of keys) {
+        map.set(k, { name, phone, isSelf: !!(a.is_self || a.is_me) });
+      }
+    }
+  } catch (e) {
+    if (DEBUG) console.warn(`Kon attendees niet ophalen voor chat ${chatId}:`, e.message);
+  }
+  return map;
+}
+
+// Sender info per bericht (resolved via attendee-map)
+function resolveSender(msg, attendeeMap, isOut) {
+  if (isOut) return { name: 'Ramon', phone: null, id: null };
+
+  // Probeer alle mogelijke sender-IDs
+  const candidates = [
+    msg.sender_attendee_id,
+    msg.sender_id,
+    msg.sender_public_identifier,
+    msg.sender?.id,
+    msg.from?.id,
+  ].filter(Boolean);
+
+  for (const id of candidates) {
+    const resolved = attendeeMap.get(id);
+    if (resolved?.name) return { name: resolved.name, phone: resolved.phone, id };
+  }
+
+  // Fallback op cleanPhone uit sender_public_identifier
+  const phone = cleanPhone(msg.sender_public_identifier);
+  if (phone) return { name: phone, phone, id: msg.sender_id || null };
+
+  // Laatste redmiddel: inline naam in msg.sender
+  const inlineName = msg.sender?.name || msg.from?.name || msg.sender_name || null;
+  if (inlineName) return { name: inlineName, phone: null, id: msg.sender_id || null };
+
+  return { name: 'Onbekend', phone: null, id: msg.sender_id || null };
+}
+
+// Chat-level contact (= "wie is dit" voor inbox listing)
+function resolveChatContact(chat, attendeeMap, channelType) {
+  const isGroup = chat?.type !== 0 || (chat?.name && chat.name !== null);
+
+  if (isGroup) {
     return {
-      name: msg.sender?.name || msg.from?.name || null,
+      name: chat?.name || chat?.title || chat?.subject || `Groep (${[...attendeeMap.values()].filter((a) => !a.isSelf).length} deelnemers)`,
+      phone: null,
       email: null,
-      phone: channelType === 'whatsapp' ? (msg.sender?.phone || msg.from?.phone || null) : null,
+      isGroup: true,
     };
   }
+
+  // 1:1 chat → pak de niet-self attendee uit de map (heeft de profielnaam)
+  for (const att of attendeeMap.values()) {
+    if (!att.isSelf && att.name) {
+      return {
+        name: att.name,
+        phone: channelType === 'whatsapp' ? att.phone : null,
+        email: null,
+        isGroup: false,
+      };
+    }
+  }
+
+  // Fallback: gebruik chat.attendee_public_identifier
+  const fallbackPhone = cleanPhone(chat?.attendee_public_identifier);
   return {
-    name: other.name || other.full_name || null,
-    email: other.email || null,
-    phone: channelType === 'whatsapp' ? (other.phone || other.phone_number || other.id) : null,
+    name: fallbackPhone || chat?.name || 'Onbekend',
+    phone: channelType === 'whatsapp' ? fallbackPhone : null,
+    email: null,
+    isGroup: false,
   };
 }
 
 function timestampToISO(value) {
   if (!value) return new Date().toISOString();
-  if (typeof value === 'number') return new Date(value).toISOString();
-  if (typeof value === 'string') return new Date(value).toISOString();
+  if (typeof value === 'number') return new Date(value < 1e12 ? value * 1000 : value).toISOString();
+  if (typeof value === 'string') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
   return new Date().toISOString();
 }
 
-function persistUnipileMessage(channel, chat, msg) {
+function extractText(msg) {
+  return msg.text || msg.body || msg.message || msg.content || msg.snippet || '';
+}
+
+function hasAttachments(msg) {
+  const att = msg.attachments || msg.media || msg.files;
+  return Array.isArray(att) && att.length > 0;
+}
+
+// ===== Persist =====
+function persistUnipileMessage(channel, chat, msg, attendeeMap) {
   const channelType = channel.type;
-  const direction = detectDirection(msg, channel.config_json);
-  const contactInfo = extractContactInfo(chat, msg, channelType);
+  const out = isOutbound(msg);
+  const sender = resolveSender(msg, attendeeMap, out);
+  const chatContact = resolveChatContact(chat, attendeeMap, channelType);
 
   let contactId = null;
   try {
-    const c = matchContact(contactInfo);
+    const c = matchContact({
+      email: chatContact.email,
+      name: chatContact.name,
+      phone: chatContact.phone,
+    });
     contactId = c?.id || null;
   } catch (e) { console.error('contact match failed:', e.message); }
 
-  const text = msg.text || msg.body || msg.message || '';
-  const snippet = text ? text.slice(0, 200) : (msg.attachments?.length ? '[📎 Bijlage]' : '(leeg bericht)');
-  const isOutbound = direction === 'outbound';
-  const status = isOutbound ? 'archived' : 'open';
-  const receivedAt = timestampToISO(msg.timestamp || msg.created_at || msg.date);
-  const deepLink = unipile.deepLinkFor(channelType, contactInfo.phone || contactInfo.name);
+  const text = extractText(msg);
+  const baseSnippet = text
+    ? text.slice(0, 200)
+    : (hasAttachments(msg) ? '[📎 Bijlage]' : '(leeg bericht)');
+
+  // Voor inbound berichten in een groep: prefix snippet met sender naam
+  const displaySnippet = (!out && chatContact.isGroup && sender.name && sender.name !== 'Onbekend')
+    ? `${sender.name}: ${baseSnippet}`
+    : baseSnippet;
+
+  const status = out ? 'archived' : 'open';
+  const receivedAt = timestampToISO(msg.timestamp || msg.created_at || msg.date || msg.sent_at);
+  const deepLink = unipile.deepLinkFor(channelType, chatContact.phone || chatContact.name);
+
+  // Per-message sender naam wordt opgeslagen in `subject` (anders ongebruikt voor chats)
+  const senderNameForStorage = sender.name || (out ? 'Ramon' : 'Onbekend');
 
   const id = uuid();
   const r = db.prepare(`
@@ -110,32 +245,40 @@ function persistUnipileMessage(channel, chat, msg) {
       id, external_id, channel_id, contact_id, direction, subject, snippet,
       body_text, deep_link, thread_id, status, priority, received_at
     ) VALUES (
-      @id, @external_id, @channel_id, @contact_id, @direction, NULL, @snippet,
+      @id, @external_id, @channel_id, @contact_id, @direction, @subject, @snippet,
       @body_text, @deep_link, @thread_id, @status, 'medium', @received_at
     )
   `).run({
-    id, external_id: msg.id, channel_id: channel.id, contact_id: contactId, direction,
-    snippet, body_text: text, deep_link: deepLink, thread_id: chat.id, status, received_at: receivedAt,
+    id,
+    external_id: msg.id,
+    channel_id: channel.id,
+    contact_id: contactId,
+    direction: out ? 'outbound' : 'inbound',
+    subject: senderNameForStorage,
+    snippet: displaySnippet,
+    body_text: text,
+    deep_link: deepLink,
+    thread_id: chat.id,
+    status,
+    received_at: receivedAt,
   });
 
   if (r.changes === 0) return { inserted: false };
 
-  // Auto-wake bij inbound nieuw bericht
-  if (!isOutbound && contactId) {
+  if (!out && contactId) {
     const wake = db.prepare(`
       UPDATE messages SET status = 'open', snoozed_until = NULL, updated_at = datetime('now')
       WHERE contact_id = ? AND status IN ('snoozed', 'waiting') AND id != ?
     `).run(contactId, id);
     if (wake.changes > 0) {
-      console.log(`⚡ Woke ${wake.changes} snoozed/waiting message(s) from ${contactInfo.name || contactInfo.phone} — new Unipile reply`);
+      console.log(`⚡ Woke ${wake.changes} snoozed/waiting message(s) from ${chatContact.name} — new Unipile reply`);
     }
   }
 
   return { inserted: true, message_id: id };
 }
 
-// Sync één Unipile-account naar zijn lokale channel
-// Optimalisaties: 30 chats × 10 msgs (was 50), skip ongewijzigde chats sinds last_sync_at
+// Sync één Unipile-account
 export async function syncUnipileAccount(channelId, unipileAccountId) {
   const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(channelId);
   if (!channel) throw new Error(`Channel ${channelId} not found`);
@@ -149,8 +292,7 @@ export async function syncUnipileAccount(channelId, unipileAccountId) {
   let skippedChats = 0;
 
   for (const chat of chats) {
-    // Skip chats die niet gewijzigd zijn sinds de laatste sync
-    const chatUpdatedRaw = chat.updated_at || chat.timestamp || chat.last_message_at;
+    const chatUpdatedRaw = chat.timestamp || chat.updated_at || chat.last_message_at;
     if (lastSyncAt && chatUpdatedRaw) {
       const chatUpdated = new Date(chatUpdatedRaw);
       if (!isNaN(chatUpdated.getTime()) && chatUpdated <= lastSyncAt) {
@@ -160,11 +302,13 @@ export async function syncUnipileAccount(channelId, unipileAccountId) {
     }
 
     try {
-      // Slechts 10 recente berichten per chat (was 50) — dedup vangt overlap af
+      // Bouw attendee-map (1 call per chat) voor naam-resolutie
+      const attendeeMap = await buildAttendeeMap(chat.id);
+
       const { items: messages } = await unipile.getChatMessages(chat.id, { limit: 10 });
       for (const msg of messages) {
         try {
-          const r = persistUnipileMessage(channel, chat, msg);
+          const r = persistUnipileMessage(channel, chat, msg, attendeeMap);
           if (r.inserted) inserted++;
         } catch (e) {
           errors++;
@@ -185,7 +329,6 @@ export async function syncUnipileAccount(channelId, unipileAccountId) {
   return { channel_id: channelId, inserted, errors, chats_seen: chats.length, chats_skipped: skippedChats };
 }
 
-// Sync alle Unipile accounts
 export async function syncAllUnipile() {
   if (!unipile.isConfigured()) {
     return { results: [], total_new: 0, accounts_synced: 0, skipped: 'not_configured' };

@@ -35,6 +35,15 @@ export default function ConversationView({
   const isEmail = m.channel_type === 'email';
   const threadMessages = thread?.messages || [m];
 
+  // Voor chat threads: tel unieke inbound senders → groepschat als >= 2
+  const isChat = m.channel_type === 'whatsapp' || m.channel_type === 'linkedin' || m.channel_type === 'instagram';
+  const uniqueInboundSenders = new Set();
+  for (const tm of threadMessages) {
+    if (tm.direction === 'inbound' && tm.subject) uniqueInboundSenders.add(tm.subject);
+  }
+  const isGroupChat = isChat && uniqueInboundSenders.size >= 2;
+  const participantCount = isGroupChat ? uniqueInboundSenders.size + 1 : 0; // +1 voor Ramon
+
   const handleSend = async ({ text, cc, bcc }) => {
     try {
       const result = await replyMut.mutateAsync({
@@ -90,7 +99,11 @@ export default function ConversationView({
           {isEmail && m.subject ? (
             <div className="mt-0.5 truncate text-sm text-gray-600">{m.subject}</div>
           ) : null}
-          {m.contact_company || m.contact_email ? (
+          {isGroupChat ? (
+            <div className="mt-0.5 truncate text-xs text-gray-500">
+              👥 Groepschat · {participantCount} deelnemers
+            </div>
+          ) : (m.contact_company || m.contact_email) ? (
             <div className="mt-0.5 truncate text-xs text-gray-500">
               {[m.contact_company, m.contact_email].filter(Boolean).join(' · ')}
             </div>

@@ -28,6 +28,7 @@ import aiRouter from './routes/ai.js';
 import exportRouter from './routes/export.js';
 import settingsRouter from './routes/settings.js';
 import eventsRouter from './routes/events.js';
+import adminRouter from './routes/admin.js';
 
 const PORT = parseInt(process.env.PORT) || 3001;
 
@@ -56,6 +57,7 @@ app.use('/api/ai', aiRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/admin', adminRouter);
 
 // OAuth callback (Google redirect target — niet onder /api)
 app.use('/auth', callbackRouter);

@@ -86,6 +86,12 @@ export async function getChatMessages(chatId, { limit = 50, cursor = null } = {}
   return { items, cursor: data?.cursor || null };
 }
 
+// ===== Attendees van een chat (voor sender naam resolutie) =====
+export async function getChatAttendees(chatId) {
+  const data = await callUnipile('GET', `/api/v1/chats/${chatId}/attendees`);
+  return Array.isArray(data) ? data : (data?.items || []);
+}
+
 // ===== Verstuur in bestaande chat =====
 export async function sendMessage(chatId, text) {
   return await callUnipile('POST', `/api/v1/chats/${chatId}/messages`, {
