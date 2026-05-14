@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMessage, useThread, useReplyMessage, useReplyWithMedia } from '../../hooks/useMessages.js';
 import EmailThread from './EmailThread.jsx';
 import ChatThread from './ChatThread.jsx';
@@ -10,6 +10,7 @@ import ChannelBadge from '../shared/ChannelBadge.jsx';
 import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Avatar from '../shared/Avatar.jsx';
 import { useToast } from '../../hooks/useToast.jsx';
+import { api } from '../../lib/api.js';
 
 export default function ConversationView({
   messageId,
@@ -31,6 +32,13 @@ export default function ConversationView({
   const replyMediaMut = useReplyWithMedia();
   const toast = useToast();
   const [showSummary, setShowSummary] = useState(false);
+
+  // Best-effort: markeer extern als gelezen zodra een conversatie geopend wordt
+  // (laat het rode nummertje in WhatsApp / Gmail verdwijnen)
+  useEffect(() => {
+    if (!messageId) return;
+    api.post(`/messages/${messageId}/mark-read`).catch(() => { /* silent */ });
+  }, [messageId]);
 
   if (isLoading || !m) {
     return (

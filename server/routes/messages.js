@@ -219,6 +219,14 @@ router.delete('/:id/pin', (req, res) => {
   res.json({ ok: true, thread_id: m.thread_id, removed: r.changes });
 });
 
+// POST /api/messages/:id/mark-read — markeer extern als gelezen (Gmail label + Unipile chat)
+router.post('/:id/mark-read', (req, res) => {
+  const msg = db.prepare('SELECT id FROM messages WHERE id = ?').get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+  markExternalRead(req.params.id);
+  res.json({ ok: true });
+});
+
 // GET /api/messages/:id/thread-summary — basale samenvatting (zonder AI)
 router.get('/:id/thread-summary', (req, res) => {
   const msg = db.prepare('SELECT id, thread_id FROM messages WHERE id = ?').get(req.params.id);
@@ -425,6 +433,7 @@ router.post('/:id/reply', async (req, res, next) => {
           autoDoneCount += upStmt.run(tid).changes;
           logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
         }
+        markExternalReadBulk(threadOpenIds);
 
         return res.json({
           ok: true,
@@ -503,15 +512,9 @@ router.post('/:id/reply', async (req, res, next) => {
       logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
     }
 
-    // Best-effort: ook in Gmail markeren als gelezen voor alle email-berichten in thread
+    // Best-effort mark-as-read in het externe kanaal (Gmail/Unipile) voor de hele thread
     if (threadOpenIds.length) {
-      const placeholders = threadOpenIds.map(() => '?').join(',');
-      const emailRows = db.prepare(`
-        SELECT m.external_id, m.channel_id FROM messages m
-        LEFT JOIN channels ch ON ch.id = m.channel_id
-        WHERE m.id IN (${placeholders}) AND ch.type = 'email' AND m.external_id IS NOT NULL
-      `).all(...threadOpenIds);
-      for (const e of emailRows) markAsReadInGmail(e.channel_id, e.external_id);
+      markExternalReadBulk(threadOpenIds);
     } else if (original.external_id) {
       markAsReadInGmail(original.channel_id, original.external_id);
     }
@@ -616,6 +619,7 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
       autoDoneCount += upStmt.run(tid).changes;
       logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
     }
+    markExternalReadBulk(threadOpenIds);
 
     return res.json({
       ok: true,
@@ -733,14 +737,7 @@ router.patch('/:id/done', (req, res) => {
     if (fb.changes === 0) return res.status(404).json({ error: 'Message not found' });
   }
   for (const id of ids) logInteraction(id, 'done', note);
-
-  // Best-effort: markeer alle email-berichten in deze thread als gelezen in Gmail
-  const emails = db.prepare(`
-    SELECT m.external_id, m.channel_id FROM messages m
-    LEFT JOIN channels ch ON ch.id = m.channel_id
-    WHERE m.id IN (${ids.map(() => '?').join(',')}) AND ch.type = 'email' AND m.external_id IS NOT NULL
-  `).all(...ids);
-  for (const e of emails) markAsReadInGmail(e.channel_id, e.external_id);
+  markExternalReadBulk(ids);
 
   res.json({ ok: true, id: req.params.id, status: 'done', thread_updated: changed });
 });
@@ -818,16 +815,7 @@ router.post('/bulk/done', (req, res) => {
   });
   const updated = tx();
 
-  if (expanded.length > 0) {
-    const placeholders = expanded.map(() => '?').join(',');
-    const emails = db.prepare(`
-      SELECT m.external_id, m.channel_id FROM messages m
-      LEFT JOIN channels ch ON ch.id = m.channel_id
-      WHERE m.id IN (${placeholders}) AND ch.type = 'email' AND m.external_id IS NOT NULL
-    `).all(...expanded);
-    for (const e of emails) markAsReadInGmail(e.channel_id, e.external_id);
-  }
-
+  markExternalReadBulk(expanded);
   logInteractionsBulk(expanded, 'done', note);
   res.json({ ok: true, updated });
 });
@@ -846,6 +834,7 @@ router.post('/bulk/archive', (req, res) => {
   });
   const updated = tx();
   logInteractionsBulk(expanded, 'archived');
+  markExternalReadBulk(expanded);
   res.json({ ok: true, updated, archived: updated });
 });
 
@@ -891,8 +880,36 @@ router.delete('/:id', (req, res) => {
     if (fb.changes === 0) return res.status(404).json({ error: 'Message not found' });
   }
   for (const id of ids) logInteraction(id, 'archived');
+  markExternalReadBulk(ids);
   res.json({ ok: true, id: req.params.id, status: 'archived', thread_updated: changed });
 });
+
+// Best-effort mark-as-read in het externe kanaal (Gmail of Unipile).
+// `seen` is een Set om dubbele Unipile-calls per thread te voorkomen.
+function markExternalRead(messageId, seen = new Set()) {
+  const row = db.prepare(`
+    SELECT m.external_id, m.channel_id, m.thread_id, ch.type
+    FROM messages m
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    WHERE m.id = ?
+  `).get(messageId);
+  if (!row) return;
+  if (row.type === 'email') {
+    if (row.external_id) markAsReadInGmail(row.channel_id, row.external_id);
+    return;
+  }
+  if ((row.type === 'whatsapp' || row.type === 'instagram' || row.type === 'linkedin') && row.thread_id) {
+    const key = `chat:${row.thread_id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    unipile.markChatAsRead(row.thread_id).catch(() => { /* best-effort */ });
+  }
+}
+
+function markExternalReadBulk(messageIds) {
+  const seen = new Set();
+  for (const id of messageIds) markExternalRead(id, seen);
+}
 
 // Geef alle OPEN message-ids in dezelfde thread terug (inclusief het opgegeven id).
 // Voor berichten zonder thread_id: alleen het bericht zelf.

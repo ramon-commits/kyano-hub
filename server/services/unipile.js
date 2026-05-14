@@ -92,6 +92,46 @@ export async function getChatAttendees(chatId) {
   return Array.isArray(data) ? data : (data?.items || []);
 }
 
+// ===== Mark chat as read =====
+// Best-effort: probeer eerst PATCH (huidige Unipile API), val terug op PUT bij 404/405.
+// Gooit nooit een fout — als het mislukt loggen we alleen, statuswijziging lokaal blijft staan.
+export async function markChatAsRead(chatId) {
+  if (!chatId || !isConfigured()) return { ok: false, reason: 'not_configured_or_no_chat' };
+  const { apiKey } = getUnipileCreds();
+  const headers = { 'X-API-KEY': apiKey, 'Accept': 'application/json' };
+
+  // Primair: PATCH /api/v1/chats/{chatId} met action body
+  try {
+    const r = await fetch(new URL(baseUrl() + `/api/v1/chats/${encodeURIComponent(chatId)}`), {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'setReadStatus', value: true }),
+    });
+    if (r.ok) return { ok: true, via: 'patch' };
+    // Alleen fallback bij methode/endpoint-fout (404/405). 401/403/500 gewoon loggen.
+    if (r.status !== 404 && r.status !== 405) {
+      console.log(`Unipile mark-as-read PATCH ${r.status} voor chat ${chatId}`);
+      return { ok: false, status: r.status, via: 'patch' };
+    }
+  } catch (e) {
+    console.log(`Unipile mark-as-read PATCH fail (${chatId}): ${e.message}`);
+  }
+
+  // Fallback: PUT /api/v1/chats/{chatId}/read (oudere API)
+  try {
+    const r = await fetch(new URL(baseUrl() + `/api/v1/chats/${encodeURIComponent(chatId)}/read`), {
+      method: 'PUT',
+      headers,
+    });
+    if (r.ok) return { ok: true, via: 'put' };
+    console.log(`Unipile mark-as-read PUT ${r.status} voor chat ${chatId}`);
+    return { ok: false, status: r.status, via: 'put' };
+  } catch (e) {
+    console.log(`Unipile mark-as-read PUT fail (${chatId}): ${e.message}`);
+    return { ok: false, error: e.message, via: 'put' };
+  }
+}
+
 // ===== Verstuur in bestaande chat =====
 export async function sendMessage(chatId, text) {
   return await callUnipile('POST', `/api/v1/chats/${chatId}/messages`, {
