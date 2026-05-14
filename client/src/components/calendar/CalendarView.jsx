@@ -36,6 +36,9 @@ export default function CalendarView({ onScheduleNew }) {
 
   const { data, isLoading, isError, error } = useCalendarEvents(weekStart.toISOString(), weekEnd.toISOString());
   const events = data?.events || [];
+  const calendarErrors = data?.errors || [];
+  const apiDisabled = calendarErrors.find((e) => e.code === 'api_disabled');
+  const scopeMissing = calendarErrors.find((e) => e.code === 'scope_missing' || e.code === 'reauth_required');
 
   const byDay = useMemo(() => {
     const days = Array.from({ length: 7 }, (_, i) => {
@@ -91,6 +94,32 @@ export default function CalendarView({ onScheduleNew }) {
 
       <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
         <div className="mx-8 my-6 space-y-4">
+          {apiDisabled ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="mb-1 flex items-center gap-2 font-semibold">
+                <i className="fa-solid fa-triangle-exclamation" />Google Calendar API uitgeschakeld
+              </div>
+              <p className="mb-2">
+                De Google Calendar API is niet geactiveerd in je Google Cloud project, dus events kunnen niet opgehaald worden.
+                De OAuth tokens hebben wél de juiste scope — je hoeft niet opnieuw te verbinden, alleen de API aan te zetten.
+              </p>
+              <a
+                href={apiDisabled.enable_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-amber-700"
+              >
+                <i className="fa-solid fa-up-right-from-square" />
+                Open Google Cloud Console
+              </a>
+              <p className="mt-2 text-xs text-amber-700">Na inschakelen: wacht 1-2 minuten en herlaad deze pagina.</p>
+            </div>
+          ) : scopeMissing ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <i className="fa-solid fa-triangle-exclamation mr-1.5" />
+              Calendar-toegang ontbreekt — verbind je email-accounts opnieuw via <strong>Instellingen → Kanalen</strong>.
+            </div>
+          ) : null}
           {isLoading ? (
             <div className="rounded-xl border border-gray-200 bg-white py-12"><LoadingSpinner label="Calendar laden…" /></div>
           ) : isError ? (

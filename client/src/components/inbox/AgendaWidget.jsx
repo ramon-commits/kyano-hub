@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useCalendarEvents } from '../../hooks/useCalendar.js';
 import { useBirthdays, useNudges } from '../../hooks/useContacts.js';
+import { useSocialPosts } from '../../hooks/useSocial.js';
 import { formatTime, parseDateSafe, isSameDay } from '../../lib/utils.js';
 
 function startOfToday() {
@@ -46,8 +47,21 @@ export default function AgendaWidget({ onNavigate, onOpenContact }) {
   const { data: eventsData, isLoading } = useCalendarEvents(isoDate(today), isoDate(weekEnd));
   const { data: birthdaysData } = useBirthdays(2);
   const { data: nudgesData } = useNudges();
+  const { data: socialData } = useSocialPosts({ status: 'scheduled' });
 
   const allEvents = eventsData?.events || [];
+  const scheduledPosts = useMemo(() => {
+    const list = socialData?.posts || [];
+    return list
+      .filter((p) => p.scheduled_at)
+      .map((p) => ({ ...p, _date: parseDateSafe(p.scheduled_at) }))
+      .filter((p) => p._date && p._date >= today && p._date < weekEnd)
+      .sort((a, b) => a._date - b._date);
+  }, [socialData, today, weekEnd]);
+  const todayPosts = scheduledPosts.filter((p) => isSameDay(p._date, today));
+  const calendarErrors = eventsData?.errors || [];
+  const apiDisabled = calendarErrors.find((e) => e.code === 'api_disabled');
+  const scopeMissing = calendarErrors.find((e) => e.code === 'scope_missing' || e.code === 'reauth_required');
   const birthdays = birthdaysData?.birthdays || [];
   const nudgesCount = (nudgesData?.nudges || []).length;
 
@@ -87,14 +101,42 @@ export default function AgendaWidget({ onNavigate, onOpenContact }) {
         </button>
       </div>
 
+      {/* Calendar API foutmelding */}
+      {apiDisabled ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-900">
+          <div className="mb-1 flex items-center gap-1.5 font-semibold">
+            <i className="fa-solid fa-triangle-exclamation" />Calendar API uitgeschakeld
+          </div>
+          <p>Schakel de Google Calendar API in voor het project en wacht een paar minuten.</p>
+          <a
+            href={apiDisabled.enable_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-flex items-center gap-1 font-medium text-amber-700 underline hover:text-amber-900"
+          >
+            Open Google Cloud Console <i className="fa-solid fa-arrow-up-right-from-square text-[9px]" />
+          </a>
+        </div>
+      ) : scopeMissing ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-900">
+          <i className="fa-solid fa-triangle-exclamation mr-1" />
+          Calendar-toegang ontbreekt — verbind email-accounts opnieuw via Instellingen → Kanalen.
+        </div>
+      ) : null}
+
       {/* Vandaag */}
       <Section label="Vandaag">
         {isLoading ? (
           <div className="px-2 py-2 text-xs text-gray-400">Laden…</div>
-        ) : todayEvents.length === 0 ? (
+        ) : todayEvents.length === 0 && todayPosts.length === 0 ? (
           <div className="px-2 py-2 text-xs text-gray-400">Geen afspraken vandaag</div>
         ) : (
-          todayEvents.map((e) => <EventRow key={e.id} event={e} />)
+          <>
+            {todayEvents.map((e) => <EventRow key={e.id} event={e} />)}
+            {todayPosts.map((p) => (
+              <SocialPostRow key={`post-${p.id}`} post={p} onNavigate={onNavigate} />
+            ))}
+          </>
         )}
       </Section>
 
@@ -201,6 +243,30 @@ function EventRow({ event }) {
         ) : null}
       </div>
     </a>
+  );
+}
+
+function SocialPostRow({ post, onNavigate }) {
+  const isIG = post.platform === 'instagram';
+  const color = isIG ? '#ec4899' : '#0a66c2';
+  const caption = (post.caption || '').replace(/\n+/g, ' ').trim();
+  const truncated = caption.length > 60 ? caption.slice(0, 57) + '…' : (caption || '(geen caption)');
+  return (
+    <button
+      onClick={() => onNavigate?.('social')}
+      className="flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-50"
+    >
+      <span className="w-12 shrink-0 font-mono text-xs font-semibold" style={{ color }}>
+        {formatTime(post._date)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <i className={`fa-brands fa-${isIG ? 'instagram' : 'linkedin'} text-[11px]`} style={{ color }} />
+          <span className="truncate text-sm text-gray-900">{truncated}</span>
+        </div>
+        <div className="text-[11px] text-gray-500">{isIG ? 'Instagram post' : 'LinkedIn post'}</div>
+      </div>
+    </button>
   );
 }
 

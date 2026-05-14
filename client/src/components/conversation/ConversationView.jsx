@@ -119,6 +119,24 @@ export default function ConversationView({
     else toast.error('Kon niet kopiëren');
   };
 
+  const handleFollowUp = async () => {
+    try {
+      const r = await api.post('/ai/follow-up', { message_id: messageId });
+      if (!r.follow_up) {
+        toast.error('Geen follow-up tekst ontvangen');
+        return null;
+      }
+      toast.success(
+        r.is_ai ? 'Follow-up gegenereerd met AI' : 'Follow-up template geladen (AI niet beschikbaar)',
+        'Follow-up klaar',
+      );
+      return { text: r.follow_up };
+    } catch (e) {
+      toast.error(e.message || 'Follow-up genereren mislukt');
+      return null;
+    }
+  };
+
   return (
     <div className="flex h-full bg-gray-50">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -191,7 +209,7 @@ export default function ConversationView({
           onAI={() => onAI?.(m)}
           onImproveNL={() => onImproveNL?.(m)}
           onTranslate={() => onTranslate?.(m)}
-          onFollowUp={() => onFollowUp?.(m)}
+          onFollowUp={handleFollowUp}
         />
 
         <ThreadStatusBar

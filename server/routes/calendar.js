@@ -6,8 +6,8 @@ const router = Router();
 router.get('/events', async (req, res, next) => {
   try {
     const { from, to } = req.query;
-    const events = await listAllEvents({ timeMin: from, timeMax: to });
-    res.json({ events });
+    const { events, errors } = await listAllEvents({ timeMin: from, timeMax: to });
+    res.json({ events, errors });
   } catch (e) { next(e); }
 });
 
@@ -17,8 +17,8 @@ router.get('/today', async (_req, res, next) => {
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
     end.setHours(23, 59, 59, 999);
-    const events = await listAllEvents({ timeMin: start.toISOString(), timeMax: end.toISOString() });
-    res.json({ events });
+    const { events, errors } = await listAllEvents({ timeMin: start.toISOString(), timeMax: end.toISOString() });
+    res.json({ events, errors });
   } catch (e) { next(e); }
 });
 

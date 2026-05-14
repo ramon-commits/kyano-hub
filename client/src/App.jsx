@@ -8,6 +8,7 @@ import ContactenView from './components/contacts/ContactenView.jsx';
 import VerjaardagenView from './components/birthdays/VerjaardagenView.jsx';
 import NudgesView from './components/nudges/NudgesView.jsx';
 import CalendarView from './components/calendar/CalendarView.jsx';
+import SocialPlannerView from './components/social/SocialPlannerView.jsx';
 import ProjectenView from './components/projects/ProjectenView.jsx';
 import InstellingenView from './components/settings/InstellingenView.jsx';
 import PlaceholderView from './components/views/PlaceholderView.jsx';
@@ -423,6 +424,8 @@ export default function App() {
         return <NudgesView onOpenContact={openContact} onSchedule={handleSchedule} />;
       case 'calendar':
         return <CalendarView onScheduleNew={() => handleSchedule(null)} />;
+      case 'social':
+        return <SocialPlannerView />;
       case 'projecten':
         return <ProjectenView />;
       case 'analytics':

@@ -90,44 +90,40 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
         <span className="text-xs text-gray-400 group-hover:hidden">{timeAgo(m.received_at)}</span>
 
         <div className="hidden items-center gap-0.5 group-hover:flex">
-          {onPin && !isPinned ? (
-            <ActionBtn onClick={(e) => { e.stopPropagation(); onPin(m); }} title="Vastzetten" hoverColor="hover:bg-amber-50 hover:text-amber-700">
-              <i className="fa-solid fa-thumbtack" />
-            </ActionBtn>
-          ) : null}
-          {onSnooze ? (
-            <ActionBtn onClick={(e) => { e.stopPropagation(); onSnooze(m); }} title="Snooze" hoverColor="hover:bg-orange-50 hover:text-orange-700">
-              <i className="fa-solid fa-clock" />
-            </ActionBtn>
-          ) : null}
+          {/* 1. Snel afvinken */}
           {onFastDone ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onFastDone(m); }} title="Snel afvinken (f)" hoverColor="hover:bg-emerald-50 hover:text-emerald-700">
               <i className="fa-solid fa-check" />
             </ActionBtn>
           ) : null}
-          {onDone ? (
-            <ActionBtn onClick={(e) => { e.stopPropagation(); onDone(m); }} title="Afhandelen met notitie" hoverColor="hover:bg-green-50 hover:text-green-700">
-              <i className="fa-solid fa-circle-check" />
+          {/* 2. Archiveer */}
+          {onArchive ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onArchive(m); }} title="Archiveer (e)" hoverColor="hover:bg-gray-100 hover:text-gray-700">
+              <i className="fa-solid fa-box-archive" />
             </ActionBtn>
           ) : null}
+          {/* 3. Blokkeer/spam */}
+          {onBlock && m.contact_email ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onBlock(m); }} title="Blokkeer afzender (x)" hoverColor="hover:bg-red-50 hover:text-red-700">
+              <i className="fa-solid fa-ban" />
+            </ActionBtn>
+          ) : null}
+          {/* 4. Plan afspraak */}
           {onSchedule ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onSchedule(m); }} title="Plan afspraak" hoverColor="hover:bg-blue-50 hover:text-blue-700">
-              <i className="fa-solid fa-calendar-days" />
+              <i className="fa-solid fa-calendar-plus" />
             </ActionBtn>
           ) : null}
+          {/* 5. Pin */}
+          {onPin && !isPinned ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onPin(m); }} title="Vastzetten" hoverColor="hover:bg-amber-50 hover:text-amber-700">
+              <i className="fa-solid fa-thumbtack" />
+            </ActionBtn>
+          ) : null}
+          {/* Reopen blijft beschikbaar voor logboek/snoozed rijen */}
           {onReopen ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onReopen(m); }} title="Terug naar inbox" hoverColor="hover:bg-blue-50 hover:text-blue-700">
               <i className="fa-solid fa-reply" />
-            </ActionBtn>
-          ) : null}
-          {onArchive ? (
-            <ActionBtn onClick={(e) => { e.stopPropagation(); onArchive(m); }} title="Archiveer" hoverColor="hover:bg-gray-200 hover:text-gray-900">
-              <i className="fa-solid fa-trash" />
-            </ActionBtn>
-          ) : null}
-          {onBlock && m.contact_email ? (
-            <ActionBtn onClick={(e) => { e.stopPropagation(); onBlock(m); }} title="Blokkeer afzender" hoverColor="hover:bg-red-50 hover:text-red-700">
-              <i className="fa-solid fa-ban" />
             </ActionBtn>
           ) : null}
         </div>

@@ -265,3 +265,21 @@ CREATE INDEX IF NOT EXISTS idx_interaction_logs_contact ON interaction_logs(cont
 CREATE INDEX IF NOT EXISTS idx_interaction_logs_action ON interaction_logs(action);
 CREATE INDEX IF NOT EXISTS idx_message_projects ON message_projects(project_id);
 CREATE INDEX IF NOT EXISTS idx_contact_projects ON contact_projects(project_id);
+
+-- Social media planner (lokaal, geen externe sync in v1)
+CREATE TABLE IF NOT EXISTS social_posts (
+  id TEXT PRIMARY KEY,
+  platform TEXT NOT NULL CHECK(platform IN ('instagram','linkedin','facebook','twitter')),
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft','scheduled','published','failed')),
+  caption TEXT,
+  media_urls TEXT,
+  scheduled_at TEXT,
+  published_at TEXT,
+  account_label TEXT,
+  tags TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_social_posts_status ON social_posts(status);
+CREATE INDEX IF NOT EXISTS idx_social_posts_scheduled ON social_posts(scheduled_at);

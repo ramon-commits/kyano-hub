@@ -28,6 +28,7 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
   const [showEmoji, setShowEmoji] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [attachError, setAttachError] = useState(null);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
   const ref = useRef(null);
   const emojiWrapRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -378,12 +379,38 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
           <i className="fa-solid fa-earth-europe mr-1.5" />Vertaal
         </button>
         <button
-          onClick={onFollowUp}
-          disabled={sending}
+          onClick={async () => {
+            if (!onFollowUp || followUpLoading) return;
+            setFollowUpLoading(true);
+            try {
+              const result = await onFollowUp();
+              if (result?.text) {
+                setText(result.text);
+                requestAnimationFrame(() => {
+                  if (ref.current) {
+                    ref.current.focus();
+                    const pos = result.text.length;
+                    ref.current.setSelectionRange(pos, pos);
+                    setCaret(pos);
+                  }
+                });
+              }
+            } finally {
+              setFollowUpLoading(false);
+            }
+          }}
+          disabled={sending || followUpLoading}
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
-          title="Schrijf een follow-up suggestie (stap 12)"
+          title="Genereer follow-up bericht op basis van deze thread"
         >
-          <i className="fa-solid fa-reply mr-1.5" />Follow-up
+          {followUpLoading ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-600" />
+              Genereren…
+            </span>
+          ) : (
+            <><i className="fa-solid fa-reply mr-1.5" />Follow-up</>
+          )}
         </button>
 
         {supportsMedia ? (

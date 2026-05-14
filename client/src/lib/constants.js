@@ -46,6 +46,7 @@ export const NAV_ITEMS = [
   { id: 'verjaardagen', icon: 'cake-candles',   label: 'Verjaardagen',  badgeKey: 'birthdays_week', shortcut: '5' },
   { id: 'nudges',       icon: 'bell',           label: 'Nudges',        badgeKey: 'nudges_count',   shortcut: '6' },
   { id: 'calendar',     icon: 'calendar-days',  label: 'Calendar',                                  shortcut: '7' },
+  { id: 'social',       icon: 'share-nodes',    label: 'Social' },
   { id: 'projecten',    icon: 'folder-open',    label: 'Projecten',                                 shortcut: '8' },
   { id: 'analytics',    icon: 'chart-line',     label: 'Analytics',                                 shortcut: '9' },
   { id: 'vraag',        icon: 'robot',          label: 'Vraag (AI)' },
@@ -56,7 +57,7 @@ export const NAV_ITEMS = [
 export const NAV_GROUPS = [
   { label: 'COMMUNICATIE', items: ['inbox', 'snoozed', 'logboek'] },
   { label: 'RELATIES',     items: ['contacten', 'verjaardagen', 'nudges'] },
-  { label: 'PLANNING',     items: ['calendar', 'projecten'] },
+  { label: 'PLANNING',     items: ['calendar', 'social', 'projecten'] },
   { label: 'AI & TOOLS',   items: ['analytics', 'vraag', 'instellingen'] },
 ];
 

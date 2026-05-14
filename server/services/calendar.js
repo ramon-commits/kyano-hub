@@ -45,19 +45,42 @@ export async function listEvents({ channelId, timeMin, timeMax, maxResults = 50 
   }));
 }
 
+function classifyCalendarError(message) {
+  if (!message) return { code: 'unknown', message: 'Onbekende calendar-fout' };
+  if (/has not been used in project|API has not been used|is disabled/i.test(message)) {
+    return {
+      code: 'api_disabled',
+      message: 'Google Calendar API is uitgeschakeld in het Google Cloud project. Schakel het in en wacht een paar minuten.',
+      enable_url: 'https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=758456638047',
+    };
+  }
+  if (/insufficient.*scope|forbidden|insufficient_permissions|invalid_scope|access denied/i.test(message)) {
+    return {
+      code: 'scope_missing',
+      message: 'Calendar-toegang ontbreekt in OAuth tokens. Verbind het email-kanaal opnieuw via Instellingen.',
+    };
+  }
+  if (/invalid_grant|invalid_request|unauthorized_client/i.test(message)) {
+    return { code: 'reauth_required', message: 'Token verlopen — verbind opnieuw via Instellingen.' };
+  }
+  return { code: 'unknown', message };
+}
+
 export async function listAllEvents({ timeMin, timeMax } = {}) {
   const channels = getConnectedEmailChannels();
   const all = [];
+  const errors = [];
   for (const ch of channels) {
     try {
       const events = await listEvents({ channelId: ch.id, timeMin, timeMax });
       all.push(...events);
     } catch (e) {
       console.error(`Calendar list failed for ${ch.id}: ${e.message}`);
+      errors.push({ channel_id: ch.id, account_email: ch.account_email, ...classifyCalendarError(e.message) });
     }
   }
   all.sort((a, b) => new Date(a.start) - new Date(b.start));
-  return all;
+  return { events: all, errors };
 }
 
 export async function createEvent({ channelId, title, start, end, attendees, description, location }) {
