@@ -1,9 +1,69 @@
-import { Router } from 'express';
+import { Router, text } from 'express';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
 import { matchContact, mergeContacts, initialsFor } from '../services/contact-matcher.js';
 
 const router = Router();
+
+const AVATAR_COLORS = ['#3b82f6', '#ec4899', '#10b981', '#f59e0b', '#6366f1', '#8b5cf6', '#dc2626'];
+function randomColor() {
+  return AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+}
+
+// Unescape ICS text-value: \\n \\, \\; \\\\ → actual characters
+function icsUnescape(s) {
+  if (!s) return s;
+  return s
+    .replace(/\\n/gi, '\n')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\');
+}
+
+// Fold ICS lines per RFC 5545 (CRLF + space/tab = continuation)
+function unfoldIcs(raw) {
+  return raw.replace(/\r?\n[ \t]/g, '');
+}
+
+// Extract a value from a property line; tolerates parameters like ;VALUE=DATE
+function extractIcsProp(block, prop) {
+  const re = new RegExp(`^${prop}(?:;[^:\\r\\n]*)?:(.*)$`, 'mi');
+  const m = block.match(re);
+  return m ? icsUnescape(m[1]).trim() : null;
+}
+
+// Strip common Facebook birthday wrappers around a name
+function cleanBirthdayName(raw) {
+  if (!raw) return null;
+  let s = raw.trim();
+  // Leading cake / party emojis
+  s = s.replace(/^(?:🎂|🎉|🎈|🎁)\s*/u, '');
+  // "Verjaardag van X" / "Verjaardag: X"
+  let m = s.match(/^(?:verjaardag(?:\s+van)?[:\s]+)(.+)$/i);
+  if (m) s = m[1];
+  // "X's birthday" / "X's verjaardag" / "X' birthday" (apostrophe of any flavor)
+  m = s.match(/^(.+?)['’`]s\s+(?:birthday|verjaardag)$/i);
+  if (m) s = m[1];
+  // "X's b-day"
+  m = s.match(/^(.+?)['’`]s\s+b-?day$/i);
+  if (m) s = m[1];
+  // Plural Dutch: "Verjaardagen" header — skip
+  if (/^verjaardagen?$/i.test(s.trim())) return null;
+  return s.trim() || null;
+}
+
+// Parse a DTSTART value: "20251225", "20251225T000000Z", "2025-12-25"
+function parseDtStartToMonthDay(value) {
+  if (!value) return null;
+  const digits = value.replace(/[^0-9]/g, '');
+  if (digits.length < 8) return null;
+  const m = digits.slice(4, 6);
+  const d = digits.slice(6, 8);
+  const mi = parseInt(m, 10);
+  const di = parseInt(d, 10);
+  if (!mi || !di || mi < 1 || mi > 12 || di < 1 || di > 31) return null;
+  return { month: m, day: d };
+}
 
 // GET /api/contacts
 router.get('/', (req, res) => {
@@ -184,6 +244,65 @@ router.post('/merge', (req, res) => {
   const result = mergeContacts(keep_id, merge_id);
   res.json(result);
 });
+
+// POST /api/contacts/import-birthdays — accepts raw ICS text (Facebook export)
+router.post(
+  '/import-birthdays',
+  text({ type: '*/*', limit: '10mb' }),
+  (req, res) => {
+    const body = typeof req.body === 'string' ? req.body : '';
+    if (!body || !body.includes('BEGIN:VEVENT')) {
+      return res.status(400).json({ error: 'Geen geldig .ics bestand (geen VEVENT blokken)' });
+    }
+
+    const unfolded = unfoldIcs(body);
+    const parts = unfolded.split(/BEGIN:VEVENT/i).slice(1);
+
+    let imported = 0;
+    let updated = 0;
+    let skipped = 0;
+    const total = parts.length;
+
+    const findContact = db.prepare('SELECT * FROM contacts WHERE lower(name) = lower(?)');
+    const updateBirthday = db.prepare(
+      "UPDATE contacts SET birthday = ?, updated_at = datetime('now') WHERE id = ?",
+    );
+    const insertContact = db.prepare(`
+      INSERT INTO contacts (id, name, birthday, avatar_initials, avatar_color)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    const tx = db.transaction(() => {
+      for (const raw of parts) {
+        const block = raw.split(/END:VEVENT/i)[0] || '';
+        const summary = extractIcsProp(block, 'SUMMARY');
+        const dtstart = extractIcsProp(block, 'DTSTART');
+        const name = cleanBirthdayName(summary);
+        const md = parseDtStartToMonthDay(dtstart);
+        if (!name || !md) { skipped += 1; continue; }
+        const birthday = `1990-${md.month}-${md.day}`;
+
+        const existing = findContact.get(name);
+        if (existing) {
+          if (existing.birthday) { skipped += 1; continue; }
+          updateBirthday.run(birthday, existing.id);
+          updated += 1;
+        } else {
+          insertContact.run(uuid(), name, birthday, initialsFor(name), randomColor());
+          imported += 1;
+        }
+      }
+    });
+
+    try {
+      tx();
+    } catch (e) {
+      return res.status(500).json({ error: e.message || 'Import mislukt' });
+    }
+
+    res.json({ ok: true, imported, updated, skipped, total });
+  },
+);
 
 // POST /api/contacts/import
 router.post('/import', (req, res) => {

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Picker from '@emoji-mart/react';
+import emojiData from '@emoji-mart/data';
 import { useQuickReplies } from '../../hooks/useQuickReplies.js';
 
 // Detect a /shortcut at the current cursor: must be at start, or preceded by whitespace.
@@ -20,7 +22,9 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
   const [bcc, setBcc] = useState('');
   const [caret, setCaret] = useState(0);
   const [activeMatch, setActiveMatch] = useState(0);
+  const [showEmoji, setShowEmoji] = useState(false);
   const ref = useRef(null);
+  const emojiWrapRef = useRef(null);
 
   const { data: qrData } = useQuickReplies(channelType);
   const quickReplies = qrData?.quick_replies || [];
@@ -31,6 +35,7 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     setBcc('');
     setShowCcBcc(false);
     setCaret(0);
+    setShowEmoji(false);
   }, [defaultAccount]);
 
   // Listen for "r" shortcut from App — focus the textarea
@@ -41,6 +46,43 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     window.addEventListener('focus-reply-composer', onFocusEvent);
     return () => window.removeEventListener('focus-reply-composer', onFocusEvent);
   }, []);
+
+  // Click-outside / Esc to close the emoji picker
+  useEffect(() => {
+    if (!showEmoji) return undefined;
+    function onDocDown(e) {
+      if (emojiWrapRef.current && !emojiWrapRef.current.contains(e.target)) {
+        setShowEmoji(false);
+      }
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') setShowEmoji(false);
+    }
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showEmoji]);
+
+  const insertEmoji = (emoji) => {
+    const native = emoji?.native || '';
+    if (!native) return;
+    const start = ref.current?.selectionStart ?? caret ?? text.length;
+    const end = ref.current?.selectionEnd ?? start;
+    const next = text.slice(0, start) + native + text.slice(end);
+    setText(next);
+    const pos = start + native.length;
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        ref.current.focus();
+        ref.current.setSelectionRange(pos, pos);
+        setCaret(pos);
+      }
+    });
+    setShowEmoji(false);
+  };
 
   const trigger = useMemo(() => findTriggerAt(text, caret), [text, caret]);
   const matches = useMemo(() => {
@@ -246,6 +288,37 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
         >
           <i className="fa-solid fa-reply mr-1.5" />Follow-up
         </button>
+
+        <div className="relative" ref={emojiWrapRef}>
+          <button
+            type="button"
+            onClick={() => setShowEmoji((v) => !v)}
+            disabled={sending}
+            aria-label="Emoji invoegen"
+            title="Emoji invoegen"
+            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+              showEmoji
+                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700'
+            }`}
+          >
+            <i className="fa-regular fa-face-smile" />
+          </button>
+          {showEmoji ? (
+            <div className="absolute bottom-full right-0 z-30 mb-2 origin-bottom-right">
+              <Picker
+                data={emojiData}
+                onEmojiSelect={insertEmoji}
+                theme="light"
+                locale="nl"
+                previewPosition="none"
+                skinTonePosition="none"
+                navPosition="top"
+                autoFocus
+              />
+            </div>
+          ) : null}
+        </div>
 
         {text.trim() ? (
           <span className="ml-auto text-xs text-gray-400">{text.trim().length} tekens</span>

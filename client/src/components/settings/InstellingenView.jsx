@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import ChannelsSettings from './ChannelsSettings.jsx';
 import UnipileSettings from './UnipileSettings.jsx';
+import BirthdayImportSettings from './BirthdayImportSettings.jsx';
 import PageHeader from '../shared/PageHeader.jsx';
 import { cn } from '../../lib/utils.js';
 
 const TABS = [
   { id: 'channels', label: 'Kanalen', icon: 'tower-broadcast' },
+  { id: 'import', label: 'Import', icon: 'cloud-arrow-up' },
   { id: 'style', label: 'Stijl', icon: 'palette' },
   { id: 'account', label: 'Account', icon: 'user' },
 ];
@@ -44,6 +46,7 @@ export default function InstellingenView() {
               </div>
             </div>
           ) : null}
+          {tab === 'import' ? <BirthdayImportSettings /> : null}
           {tab === 'style' ? (
             <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-6 text-sm text-amber-900">
               <i className="fa-solid fa-palette mr-1.5" />Stijlprofiel wordt gebouwd in stap 11. Hier komen je communicatie-DNA, signatures, en per-kanaal toon.

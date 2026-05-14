@@ -22,6 +22,34 @@ function senderNameOf(m) {
   return m.subject || m.contact_name || 'Onbekend';
 }
 
+function linkifyText(text) {
+  if (!text) return [text];
+  const regex = /(https?:\/\/[^\s<>]+|www\.[^\s<>]+)/g;
+  const result = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) result.push(text.slice(lastIndex, match.index));
+    const url = match[0];
+    const href = url.startsWith('www.') ? 'https://' + url : url;
+    result.push(
+      <a
+        key={`${match.index}-${url}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 underline hover:text-blue-800 break-all"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {url.length > 50 ? url.slice(0, 47) + '...' : url}
+      </a>,
+    );
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) result.push(text.slice(lastIndex));
+  return result;
+}
+
 export default function ChatThread({ message, threadMessages }) {
   const items = threadMessages?.length ? threadMessages : [message];
   const bottomRef = useRef(null);
@@ -94,7 +122,7 @@ export default function ChatThread({ message, threadMessages }) {
                   >
                     <div className="whitespace-pre-wrap break-words text-[14px] leading-snug">
                       {/* Snippet kan "Sender: tekst" zijn als dat zo gestored is — gebruik body_text als bron-of-truth */}
-                      {m.body_text || stripSenderPrefix(m.snippet) || '(leeg)'}
+                      {linkifyText(m.body_text || stripSenderPrefix(m.snippet) || '(leeg)')}
                     </div>
                     <div className="mt-1 text-right text-[10px] text-gray-500">
                       {formatTime(d)}
