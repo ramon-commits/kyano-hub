@@ -111,8 +111,8 @@ export default function ChatThread({ message, threadMessages }) {
                   <div
                     className={
                       isOutbound
-                        ? 'rounded-2xl rounded-tr-sm px-3 py-2 shadow-sm'
-                        : 'rounded-2xl rounded-tl-sm bg-white px-3 py-2 shadow-sm'
+                        ? 'rounded-2xl rounded-tr-sm px-2 py-2 shadow-sm'
+                        : 'rounded-2xl rounded-tl-sm bg-white px-2 py-2 shadow-sm'
                     }
                     style={
                       isOutbound
@@ -120,11 +120,17 @@ export default function ChatThread({ message, threadMessages }) {
                         : undefined
                     }
                   >
-                    <div className="whitespace-pre-wrap break-words text-[14px] leading-snug">
-                      {/* Snippet kan "Sender: tekst" zijn als dat zo gestored is — gebruik body_text als bron-of-truth */}
-                      {linkifyText(m.body_text || stripSenderPrefix(m.snippet) || '(leeg)')}
-                    </div>
-                    <div className="mt-1 text-right text-[10px] text-gray-500">
+                    <MediaContent attachments={m.attachments_json} />
+                    {(m.body_text || stripSenderPrefix(m.snippet)) ? (
+                      <div className="whitespace-pre-wrap break-words px-1 text-[14px] leading-snug">
+                        {linkifyText(m.body_text || stripSenderPrefix(m.snippet))}
+                      </div>
+                    ) : (!m.attachments_json) ? (
+                      <div className="whitespace-pre-wrap break-words px-1 text-[14px] leading-snug text-gray-400">
+                        (leeg)
+                      </div>
+                    ) : null}
+                    <div className="mt-1 px-1 text-right text-[10px] text-gray-500">
                       {formatTime(d)}
                     </div>
                   </div>
@@ -135,6 +141,112 @@ export default function ChatThread({ message, threadMessages }) {
         })}
         <div ref={bottomRef} />
       </div>
+    </div>
+  );
+}
+
+function parseAttachments(input) {
+  if (!input) return [];
+  if (Array.isArray(input)) return input;
+  if (typeof input !== 'string') return [];
+  try {
+    const parsed = JSON.parse(input);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatBytes(n) {
+  if (!n || typeof n !== 'number') return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function MediaContent({ attachments }) {
+  const items = parseAttachments(attachments);
+  if (!items.length) return null;
+  return (
+    <div className="mb-1 space-y-1">
+      {items.map((att, i) => {
+        const url = att.url || att.download_url || null;
+        const mime = att.mime || att.mime_type || att.type || '';
+        const filename = att.filename || att.file_name || att.name || null;
+        const kind = att.kind
+          || (mime.startsWith?.('image/') ? 'image'
+            : mime.startsWith?.('video/') ? 'video'
+            : mime.startsWith?.('audio/') ? 'audio'
+            : (filename && /\.(jpe?g|png|gif|webp)$/i.test(filename)) ? 'image'
+            : (filename && /\.(mp4|mov|webm)$/i.test(filename)) ? 'video'
+            : 'file');
+
+        if (kind === 'image' && url) {
+          return (
+            <a
+              key={att.id || i}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="block"
+            >
+              <img
+                src={url}
+                alt={filename || 'Foto'}
+                loading="lazy"
+                className="max-h-80 max-w-[280px] cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
+              />
+            </a>
+          );
+        }
+        if (kind === 'video' && url) {
+          return (
+            <video
+              key={att.id || i}
+              src={url}
+              controls
+              preload="metadata"
+              className="max-h-80 max-w-[280px] rounded-lg bg-black"
+            />
+          );
+        }
+        if (kind === 'audio' && url) {
+          return (
+            <audio
+              key={att.id || i}
+              src={url}
+              controls
+              className="w-[280px]"
+            />
+          );
+        }
+        // file (PDF, doc, anders) of ontbrekende URL
+        const sizeLabel = formatBytes(att.size || att.file_size);
+        return url ? (
+          <a
+            key={att.id || i}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-w-[280px] items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-200"
+          >
+            <i className="fa-solid fa-file shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{filename || 'Bijlage'}</span>
+            {sizeLabel ? <span className="shrink-0 text-xs text-gray-500">{sizeLabel}</span> : null}
+          </a>
+        ) : (
+          <div
+            key={att.id || i}
+            className="flex max-w-[280px] items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500"
+            title="Geen download-URL beschikbaar"
+          >
+            <i className="fa-solid fa-paperclip shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{filename || `${kind} (geen URL)`}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

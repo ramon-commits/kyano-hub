@@ -15,7 +15,10 @@ function findTriggerAt(text, caret) {
   return { trigger, start, end: caret };
 }
 
-export default function ReplyComposer({ channelType, defaultAccount, sending, onSend, onCopy, onAI, onImproveNL, onTranslate, onFollowUp }) {
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+export default function ReplyComposer({ channelType, defaultAccount, sending, onSend, onSendMedia, onCopy, onAI, onImproveNL, onTranslate, onFollowUp }) {
   const [text, setText] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [cc, setCc] = useState('');
@@ -23,8 +26,11 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
   const [caret, setCaret] = useState(0);
   const [activeMatch, setActiveMatch] = useState(0);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState([]);
+  const [attachError, setAttachError] = useState(null);
   const ref = useRef(null);
   const emojiWrapRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const { data: qrData } = useQuickReplies(channelType);
   const quickReplies = qrData?.quick_replies || [];
@@ -36,7 +42,45 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     setShowCcBcc(false);
     setCaret(0);
     setShowEmoji(false);
+    setAttachedFiles([]);
+    setAttachError(null);
   }, [defaultAccount]);
+
+  // Cleanup blob URLs voor previews
+  const previewUrls = useMemo(
+    () => attachedFiles.map((f) => (f.type.startsWith('image/') ? URL.createObjectURL(f) : null)),
+    [attachedFiles],
+  );
+  useEffect(() => () => {
+    for (const u of previewUrls) if (u) URL.revokeObjectURL(u);
+  }, [previewUrls]);
+
+  const supportsMedia = channelType === 'whatsapp' || channelType === 'linkedin' || channelType === 'instagram';
+
+  function handleFilesPicked(fileList) {
+    setAttachError(null);
+    if (!fileList?.length) return;
+    const accepted = [];
+    let oversize = 0;
+    for (const f of fileList) {
+      if (f.size > MAX_FILE_BYTES) { oversize += 1; continue; }
+      accepted.push(f);
+    }
+    setAttachedFiles((prev) => {
+      const next = [...prev, ...accepted];
+      if (next.length > MAX_FILES) {
+        setAttachError(`Maximaal ${MAX_FILES} bestanden`);
+        return next.slice(0, MAX_FILES);
+      }
+      return next;
+    });
+    if (oversize) setAttachError(`${oversize} bestand(en) te groot (max 10MB)`);
+  }
+
+  function removeAttachment(idx) {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
+    setAttachError(null);
+  }
 
   // Listen for "r" shortcut from App — focus the textarea
   useEffect(() => {
@@ -110,7 +154,18 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
   };
 
   const handleSend = async () => {
-    if (!text.trim() || sending) return;
+    if (sending) return;
+    if (attachedFiles.length > 0) {
+      if (!onSendMedia) return;
+      const ok = await onSendMedia({ text, files: attachedFiles });
+      if (ok) {
+        setText('');
+        setAttachedFiles([]);
+        setAttachError(null);
+      }
+      return;
+    }
+    if (!text.trim()) return;
     const ok = await onSend?.({ text, cc, bcc });
     if (ok) {
       setText('');
@@ -164,6 +219,48 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
             placeholder="BCC: email@example.com"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
           />
+        </div>
+      ) : null}
+
+      {attachedFiles.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          {attachedFiles.map((f, i) => {
+            const preview = previewUrls[i];
+            const isImg = f.type.startsWith('image/');
+            return (
+              <div key={`${f.name}-${i}`} className="group relative">
+                {isImg && preview ? (
+                  <img
+                    src={preview}
+                    alt={f.name}
+                    className="h-16 w-16 rounded-md object-cover ring-1 ring-gray-200"
+                  />
+                ) : (
+                  <div className="flex h-16 min-w-[160px] max-w-[220px] items-center gap-2 rounded-md bg-white px-3 text-xs ring-1 ring-gray-200">
+                    <i className={`fa-solid ${f.type.startsWith('video/') ? 'fa-film' : 'fa-file'} text-gray-500`} />
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-gray-900">{f.name}</div>
+                      <div className="text-[10px] text-gray-500">{Math.max(1, Math.round(f.size / 1024))} KB</div>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(i)}
+                  className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-red-500 text-[10px] text-white opacity-0 shadow-sm transition-opacity hover:bg-red-600 group-hover:opacity-100"
+                  aria-label="Bijlage verwijderen"
+                  title="Verwijderen"
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {attachError ? (
+        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+          <i className="fa-solid fa-triangle-exclamation mr-1" />{attachError}
         </div>
       ) : null}
 
@@ -235,7 +332,7 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           onClick={handleSend}
-          disabled={!text.trim() || sending}
+          disabled={(!text.trim() && attachedFiles.length === 0) || sending}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {sending ? (
@@ -288,6 +385,32 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
         >
           <i className="fa-solid fa-reply mr-1.5" />Follow-up
         </button>
+
+        {supportsMedia ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,video/*,.pdf,.doc,.docx"
+              onChange={(e) => {
+                handleFilesPicked(e.target.files);
+                e.target.value = '';
+              }}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending || attachedFiles.length >= MAX_FILES}
+              aria-label="Foto of bestand toevoegen"
+              title={attachedFiles.length >= MAX_FILES ? `Max ${MAX_FILES} bestanden` : 'Foto of bestand toevoegen'}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <i className="fa-regular fa-image" />
+            </button>
+          </>
+        ) : null}
 
         <div className="relative" ref={emojiWrapRef}>
           <button

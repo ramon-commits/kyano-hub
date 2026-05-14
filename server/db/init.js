@@ -40,6 +40,8 @@ const SAFE_ALTERS = [
   "ALTER TABLE contacts ADD COLUMN deal_value REAL",
   "ALTER TABLE contacts ADD COLUMN next_action TEXT",
   "ALTER TABLE contacts ADD COLUMN next_action_date TEXT",
+  // Media in chat berichten (Unipile attachments) — JSON array
+  "ALTER TABLE messages ADD COLUMN attachments_json TEXT",
 ];
 for (const sql of SAFE_ALTERS) {
   try { db.exec(sql); } catch (e) {

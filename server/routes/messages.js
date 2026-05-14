@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
 import { sendReply, sendNew } from '../services/gmail-send.js';
@@ -7,6 +8,22 @@ import { matchContact } from '../services/contact-matcher.js';
 import * as unipile from '../services/unipile.js';
 
 const router = Router();
+
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+});
+
+function kindForMime(mime, filename) {
+  const m = (mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  if (filename && /\.(jpe?g|png|gif|webp)$/i.test(filename)) return 'image';
+  if (filename && /\.(mp4|mov|webm)$/i.test(filename)) return 'video';
+  if (filename && /\.(mp3|m4a|ogg|wav)$/i.test(filename)) return 'audio';
+  return 'file';
+}
 
 const MESSAGE_SELECT = `
   SELECT
@@ -308,6 +325,106 @@ router.post('/:id/reply', async (req, res, next) => {
       original_done: autoDone.changes > 0,
     });
   } catch (e) { next(e); }
+});
+
+// POST /api/messages/:id/reply-with-media — reply met bestanden (alleen Unipile-kanalen)
+router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, res) => {
+  try {
+    const original = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
+    if (!original) return res.status(404).json({ error: 'Message not found' });
+
+    const text = (req.body?.text || '').toString();
+    const files = req.files || [];
+    if (!text.trim() && files.length === 0) {
+      return res.status(400).json({ error: 'tekst of minstens 1 bestand vereist' });
+    }
+    if (original.channel_type === 'email') {
+      return res.status(400).json({ error: 'Email-bijlagen worden nog niet ondersteund via deze route' });
+    }
+    if (!unipile.isConfigured()) {
+      return res.status(400).json({ error: 'Unipile niet geconfigureerd' });
+    }
+    const chatId = original.thread_id;
+    if (!chatId) return res.status(400).json({ error: 'Geen thread_id (chat) gevonden voor dit bericht' });
+
+    let sent;
+    try {
+      sent = await unipile.sendMessageWithAttachments(chatId, text, files.map((f) => ({
+        buffer: f.buffer,
+        filename: f.originalname,
+        mimetype: f.mimetype,
+      })));
+    } catch (e) {
+      return res.status(502).json({ error: e.message, deep_link: original.deep_link });
+    }
+
+    // Sla het verzonden bericht lokaal op met genormaliseerde attachments
+    const localAttachments = files.map((f, idx) => ({
+      id: `local-${idx}-${Date.now()}`,
+      kind: kindForMime(f.mimetype, f.originalname),
+      mime: f.mimetype,
+      url: null, // Unipile-response geeft url's, maar de browser heeft die niet nodig: we tonen meteen
+      filename: f.originalname,
+      size: f.size,
+    }));
+    // Als de Unipile response wel URLs teruggeeft per attachment, gebruik die zodat we ze direct kunnen tonen
+    if (Array.isArray(sent?.attachments)) {
+      sent.attachments.forEach((a, idx) => {
+        if (localAttachments[idx] && (a.url || a.download_url)) {
+          localAttachments[idx].url = a.url || a.download_url;
+        }
+      });
+    }
+
+    const localId = uuid();
+    const snippet = (text.trim() || `📎 ${files.length} bijlage${files.length === 1 ? '' : 'n'}`).slice(0, 200);
+
+    db.prepare(`
+      INSERT OR IGNORE INTO messages (
+        id, external_id, channel_id, contact_id, direction, snippet, body_text,
+        deep_link, thread_id, status, priority, received_at, attachments_json
+      ) VALUES (
+        @id, @external_id, @channel_id, @contact_id, 'outbound', @snippet, @body_text,
+        @deep_link, @thread_id, 'archived', 'medium', @received_at, @attachments_json
+      )
+    `).run({
+      id: localId,
+      external_id: sent?.id || sent?.message_id || `local-${localId}`,
+      channel_id: original.channel_id,
+      contact_id: original.contact_id,
+      snippet,
+      body_text: text,
+      deep_link: original.deep_link,
+      thread_id: chatId,
+      received_at: new Date().toISOString(),
+      attachments_json: JSON.stringify(localAttachments),
+    });
+
+    // Auto-done op het origineel (zelfde flow als gewone reply)
+    const autoDone = db.prepare(`
+      UPDATE messages SET
+        status = 'done', done_at = datetime('now'),
+        done_category = 'replied', done_note = 'Beantwoord via Comm Hub',
+        updated_at = datetime('now')
+      WHERE id = ? AND status != 'done'
+    `).run(req.params.id);
+    if (autoDone.changes > 0) {
+      logInteraction(req.params.id, 'replied', 'Beantwoord via Comm Hub', 'sent');
+    }
+
+    return res.json({
+      ok: true,
+      message_id: localId,
+      channel_type: original.channel_type,
+      attachments: localAttachments.length,
+      original_id: req.params.id,
+      original_done: autoDone.changes > 0,
+    });
+  } catch (e) {
+    if (e?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Bestand groter dan 10MB' });
+    if (e?.code === 'LIMIT_FILE_COUNT') return res.status(413).json({ error: 'Max 5 bestanden' });
+    return res.status(500).json({ error: e.message || 'Upload mislukt' });
+  }
 });
 
 // POST /api/messages/compose — nieuw bericht (geen reply)

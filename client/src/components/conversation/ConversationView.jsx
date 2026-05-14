@@ -1,4 +1,4 @@
-import { useMessage, useThread, useReplyMessage } from '../../hooks/useMessages.js';
+import { useMessage, useThread, useReplyMessage, useReplyWithMedia } from '../../hooks/useMessages.js';
 import EmailThread from './EmailThread.jsx';
 import ChatThread from './ChatThread.jsx';
 import ReplyComposer from './ReplyComposer.jsx';
@@ -26,6 +26,7 @@ export default function ConversationView({
   const { data: m, isLoading } = useMessage(messageId);
   const { data: thread } = useThread(messageId);
   const replyMut = useReplyMessage();
+  const replyMediaMut = useReplyWithMedia();
   const toast = useToast();
 
   if (isLoading || !m) {
@@ -75,6 +76,29 @@ export default function ConversationView({
       } else {
         toast.error(e.message || 'Verzenden mislukt');
       }
+      return false;
+    }
+  };
+
+  const handleSendMedia = async ({ text, files }) => {
+    if (!files?.length) return false;
+    try {
+      const result = await replyMediaMut.mutateAsync({ id: messageId, text, files });
+      if (onReplySent) {
+        onReplySent({
+          from: m.channel_account || m.channel_label,
+          channelLabel: m.channel_account || m.channel_label,
+          originalId: result.original_id || messageId,
+          originalDone: !!result.original_done,
+        });
+      } else {
+        toast.success(`${files.length} bestand${files.length === 1 ? '' : 'en'} verzonden`, 'Verstuurd');
+      }
+      return true;
+    } catch (e) {
+      if (e.status === 413) toast.error(e.message || 'Bestand te groot');
+      else if (e.status === 400) toast.error(e.message || 'Verzenden mislukt');
+      else toast.error(e.message || 'Media verzenden mislukt');
       return false;
     }
   };
@@ -136,8 +160,9 @@ export default function ConversationView({
       <ReplyComposer
         channelType={m.channel_type}
         defaultAccount={m.channel_account}
-        sending={replyMut.isPending}
+        sending={replyMut.isPending || replyMediaMut.isPending}
         onSend={handleSend}
+        onSendMedia={handleSendMedia}
         onCopy={handleCopy}
         onAI={() => onAI?.(m)}
         onImproveNL={() => onImproveNL?.(m)}

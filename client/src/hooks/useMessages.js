@@ -40,6 +40,33 @@ export function useReplyMessage() {
   });
 }
 
+export function useReplyWithMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, text, files }) => {
+      const form = new FormData();
+      if (text) form.append('text', text);
+      for (const f of files) form.append('files', f, f.name);
+      const res = await fetch(`/api/messages/${id}/reply-with-media`, { method: 'POST', body: form });
+      const txt = await res.text();
+      let data = null;
+      try { data = txt ? JSON.parse(txt) : null; } catch { data = { raw: txt }; }
+      if (!res.ok) {
+        const err = new Error(data?.error || `HTTP ${res.status}`);
+        err.status = res.status;
+        err.data = data;
+        throw err;
+      }
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['thread'] });
+      qc.invalidateQueries({ queryKey: ['message', vars.id] });
+    },
+  });
+}
+
 export function useSyncAll() {
   const qc = useQueryClient();
   return useMutation({

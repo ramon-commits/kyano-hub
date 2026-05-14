@@ -99,6 +99,42 @@ export async function sendMessage(chatId, text) {
   });
 }
 
+// ===== Verstuur in bestaande chat met media (multipart/form-data) =====
+// files: Array<{ buffer: Buffer, filename: string, mimetype: string }>
+export async function sendMessageWithAttachments(chatId, text, files) {
+  const { apiKey, dsn } = getUnipileCreds();
+  if (!apiKey || !dsn) throw new Error('Unipile niet geconfigureerd');
+
+  const url = new URL(baseUrl() + `/api/v1/chats/${chatId}/messages`);
+  const form = new FormData();
+  if (text) form.append('text', text);
+  for (const f of files) {
+    const blob = new Blob([f.buffer], { type: f.mimetype || 'application/octet-stream' });
+    form.append('attachments', blob, f.filename || 'bestand');
+  }
+
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'X-API-KEY': apiKey, 'Accept': 'application/json' },
+      body: form,
+    });
+  } catch (e) {
+    throw new Error(`Kan Unipile niet bereiken: ${e.message}`);
+  }
+
+  const txt = await resp.text();
+  let data = null;
+  try { data = txt ? JSON.parse(txt) : null; } catch { data = { raw: txt }; }
+
+  if (!resp.ok) {
+    if (resp.status === 401) throw new Error('Unipile API key ongeldig of verlopen');
+    throw new Error(`Unipile media-send error (${resp.status}): ${data?.message || data?.detail || txt.slice(0, 200)}`);
+  }
+  return data;
+}
+
 // ===== Start nieuwe chat =====
 export async function startNewChat(accountId, attendeeId, text) {
   return await callUnipile('POST', '/api/v1/chats', {

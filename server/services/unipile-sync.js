@@ -205,6 +205,51 @@ function hasAttachments(msg) {
   return Array.isArray(att) && att.length > 0;
 }
 
+// Normaliseer Unipile attachment shape — input kan per provider variëren
+// (WhatsApp: { id, type, url, mimetype, file_size, file_name }; soms gewoon { url })
+function normalizeAttachments(msg) {
+  const raw = msg.attachments || msg.media || msg.files;
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  return raw.map((a, idx) => {
+    const mime = a.mimetype || a.mime_type || a.content_type || a.type || null;
+    const urlField = a.url || a.download_url || a.media_url || a.preview_url || a.thumbnail_url || null;
+    const filename = a.file_name || a.filename || a.name || null;
+    const size = a.file_size || a.size || a.bytes || null;
+    // Unipile type kan "img" / "video" / "audio" / "file" zijn (provider-specifiek), of een echte mime
+    const kindRaw = (a.type || '').toLowerCase();
+    let kind = null;
+    if (kindRaw === 'img' || kindRaw === 'image' || /^image\//.test(mime || '')) kind = 'image';
+    else if (kindRaw === 'video' || /^video\//.test(mime || '')) kind = 'video';
+    else if (kindRaw === 'audio' || /^audio\//.test(mime || '')) kind = 'audio';
+    else if (filename && /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(filename)) kind = 'image';
+    else if (filename && /\.(mp4|mov|webm|m4v)$/i.test(filename)) kind = 'video';
+    else if (filename && /\.(mp3|m4a|ogg|wav|opus)$/i.test(filename)) kind = 'audio';
+    else kind = 'file';
+    return {
+      id: a.id || `${msg.id || 'msg'}-${idx}`,
+      kind,            // 'image' | 'video' | 'audio' | 'file'
+      mime,
+      url: urlField,
+      filename,
+      size,
+    };
+  });
+}
+
+function mediaSnippet(attachments) {
+  if (!attachments.length) return '';
+  const kinds = new Set(attachments.map((a) => a.kind));
+  if (kinds.size === 1) {
+    const k = [...kinds][0];
+    const n = attachments.length;
+    if (k === 'image') return n === 1 ? '📷 Foto' : `📷 ${n} foto's`;
+    if (k === 'video') return n === 1 ? '🎥 Video' : `🎥 ${n} video's`;
+    if (k === 'audio') return n === 1 ? '🎵 Audio' : `🎵 ${n} audio`;
+    return n === 1 ? '📎 Bestand' : `📎 ${n} bestanden`;
+  }
+  return `📎 ${attachments.length} bijlagen`;
+}
+
 // ===== Persist =====
 function persistUnipileMessage(channel, chat, msg, attendeeMap) {
   const channelType = channel.type;
@@ -223,9 +268,11 @@ function persistUnipileMessage(channel, chat, msg, attendeeMap) {
   } catch (e) { console.error('contact match failed:', e.message); }
 
   const text = extractText(msg);
+  const attachments = normalizeAttachments(msg);
+  const attachmentsJson = attachments.length ? JSON.stringify(attachments) : null;
   const baseSnippet = text
     ? text.slice(0, 200)
-    : (hasAttachments(msg) ? '[📎 Bijlage]' : '(leeg bericht)');
+    : (attachments.length ? mediaSnippet(attachments) : '(leeg bericht)');
 
   // Voor inbound berichten in een groep: prefix snippet met sender naam
   const displaySnippet = (!out && chatContact.isGroup && sender.name && sender.name !== 'Onbekend')
@@ -243,10 +290,10 @@ function persistUnipileMessage(channel, chat, msg, attendeeMap) {
   const r = db.prepare(`
     INSERT OR IGNORE INTO messages (
       id, external_id, channel_id, contact_id, direction, subject, snippet,
-      body_text, deep_link, thread_id, status, priority, received_at
+      body_text, deep_link, thread_id, status, priority, received_at, attachments_json
     ) VALUES (
       @id, @external_id, @channel_id, @contact_id, @direction, @subject, @snippet,
-      @body_text, @deep_link, @thread_id, @status, 'medium', @received_at
+      @body_text, @deep_link, @thread_id, @status, 'medium', @received_at, @attachments_json
     )
   `).run({
     id,
@@ -261,9 +308,19 @@ function persistUnipileMessage(channel, chat, msg, attendeeMap) {
     thread_id: chat.id,
     status,
     received_at: receivedAt,
+    attachments_json: attachmentsJson,
   });
 
-  if (r.changes === 0) return { inserted: false };
+  // Backfill: bericht bestond al maar zonder attachments_json — update als nieuwe data attachments heeft
+  if (r.changes === 0) {
+    if (attachmentsJson) {
+      db.prepare(`
+        UPDATE messages SET attachments_json = ?, snippet = COALESCE(NULLIF(body_text, ''), snippet, ?), updated_at = datetime('now')
+        WHERE channel_id = ? AND external_id = ? AND (attachments_json IS NULL OR attachments_json = '')
+      `).run(attachmentsJson, displaySnippet, channel.id, msg.id);
+    }
+    return { inserted: false };
+  }
 
   if (!out && contactId) {
     const wake = db.prepare(`
