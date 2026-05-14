@@ -9,7 +9,7 @@ router.get('/', (_req, res) => {
   const channels = db.prepare(`
     SELECT
       c.*,
-      (SELECT COUNT(*) FROM messages WHERE channel_id = c.id AND status = 'open') AS open_count,
+      (SELECT COUNT(DISTINCT COALESCE(thread_id, id)) FROM messages WHERE channel_id = c.id AND status = 'open') AS open_count,
       (SELECT COUNT(*) FROM messages WHERE channel_id = c.id) AS message_count,
       (SELECT last_sync_at FROM sync_state WHERE channel_id = c.id) AS last_sync_at,
       (SELECT last_history_id FROM sync_state WHERE channel_id = c.id) AS last_history_id

@@ -4,10 +4,15 @@ import db from '../db/init.js';
 const router = Router();
 
 router.get('/', (_req, res) => {
-  const openCount = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'open'`).get().n;
+  // open_count en urgent_count tellen unieke CONVERSATIES (threads), niet losse berichten
+  const openCount = db.prepare(`
+    SELECT COUNT(DISTINCT COALESCE(thread_id, id)) AS n FROM messages WHERE status = 'open'
+  `).get().n;
   const snoozedCount = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'snoozed'`).get().n;
   const doneToday = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'done' AND date(done_at) = date('now')`).get().n;
-  const urgentCount = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'open' AND priority = 'high'`).get().n;
+  const urgentCount = db.prepare(`
+    SELECT COUNT(DISTINCT COALESCE(thread_id, id)) AS n FROM messages WHERE status = 'open' AND priority = 'high'
+  `).get().n;
 
   // Birthdays in komende 7 dagen
   const birthdaysContacts = db.prepare(`SELECT birthday FROM contacts WHERE birthday IS NOT NULL AND birthday != ''`).all();
@@ -47,8 +52,12 @@ router.get('/', (_req, res) => {
 });
 
 router.get('/daily-summary', (_req, res) => {
-  const open = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'open'`).get().n;
-  const urgent = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'open' AND priority = 'high'`).get().n;
+  const open = db.prepare(`
+    SELECT COUNT(DISTINCT COALESCE(thread_id, id)) AS n FROM messages WHERE status = 'open'
+  `).get().n;
+  const urgent = db.prepare(`
+    SELECT COUNT(DISTINCT COALESCE(thread_id, id)) AS n FROM messages WHERE status = 'open' AND priority = 'high'
+  `).get().n;
   const wakingToday = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'snoozed' AND date(snoozed_until) = date('now')`).get().n;
   const doneYesterday = db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE status = 'done' AND date(done_at) = date('now','-1 day')`).get().n;
 

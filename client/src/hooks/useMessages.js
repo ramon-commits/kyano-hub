@@ -27,6 +27,15 @@ export function useThread(messageId) {
   });
 }
 
+export function useThreadSummary(messageId) {
+  return useQuery({
+    queryKey: ['thread-summary', messageId],
+    queryFn: () => api.get(`/messages/${messageId}/thread-summary`),
+    enabled: !!messageId,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useReplyMessage() {
   const qc = useQueryClient();
   return useMutation({

@@ -332,29 +332,31 @@ function persistUnipileMessage(channel, chat, msg, attendeeMap) {
     }
   }
 
-  // Auto-done: outbound bericht binnen → markeer open inbound in dezelfde thread als beantwoord
+  // Auto-done: outbound bericht binnen → markeer ALLE open inbound in dezelfde thread als beantwoord
   if (out && chat.id) {
-    const openInbound = db.prepare(`
+    const openInboundRows = db.prepare(`
       SELECT id, contact_id FROM messages
       WHERE thread_id = ? AND direction = 'inbound' AND status = 'open' AND id != ?
-      ORDER BY received_at DESC LIMIT 1
-    `).get(chat.id, id);
+    `).all(chat.id, id);
 
-    if (openInbound) {
+    if (openInboundRows.length) {
       const noteText = `Beantwoord via ${channelType === 'whatsapp' ? 'WhatsApp' : channelType}`;
-      db.prepare(`
+      const upd = db.prepare(`
         UPDATE messages SET
           status = 'done', done_at = datetime('now'),
           done_category = 'replied', done_note = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).run(noteText, openInbound.id);
-      try {
-        db.prepare(`
-          INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, note, outcome)
-          VALUES (?, ?, ?, 'replied', ?, ?, 'sent')
-        `).run(uuid(), openInbound.id, openInbound.contact_id, channelType, noteText);
-      } catch (e) { console.error('auto-done log fail:', e.message); }
-      console.log(`✅ Auto-done: bericht ${openInbound.id} gemarkeerd als beantwoord (${noteText})`);
+      `);
+      const logIns = db.prepare(`
+        INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, note, outcome)
+        VALUES (?, ?, ?, 'replied', ?, ?, 'sent')
+      `);
+      for (const row of openInboundRows) {
+        upd.run(noteText, row.id);
+        try { logIns.run(uuid(), row.id, row.contact_id, channelType, noteText); }
+        catch (e) { console.error('auto-done log fail:', e.message); }
+      }
+      console.log(`✅ Auto-done: ${openInboundRows.length} bericht(en) in thread ${chat.id} gemarkeerd als beantwoord (${noteText})`);
     }
   }
 

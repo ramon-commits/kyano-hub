@@ -39,6 +39,14 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           <span className="truncate text-sm font-semibold text-gray-900">
             {m.contact_name || m.channel_account || 'Onbekend'}
           </span>
+          {m.message_count > 1 ? (
+            <span
+              className="shrink-0 rounded-full bg-gray-100 px-1.5 py-px text-[11px] font-semibold leading-snug text-gray-600"
+              title={`${m.message_count} berichten in deze conversatie`}
+            >
+              {m.message_count}
+            </span>
+          ) : null}
           <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" showLabel={false} />
           {m.priority === 'high' ? <PriorityBadge priority="high" size="xs" /> : null}
           {m.status === 'waiting' ? (

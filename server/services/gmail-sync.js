@@ -69,6 +69,34 @@ function extractBody(payload) {
   };
 }
 
+// ===== Attachment extraction =====
+function extractAttachments(payload) {
+  const attachments = [];
+  function walk(parts) {
+    if (!parts) return;
+    for (const part of parts) {
+      const filename = part.filename || '';
+      const attachmentId = part.body?.attachmentId || null;
+      if (filename && filename.length > 0 && attachmentId) {
+        const contentIdHeader = (part.headers || []).find((h) => h.name?.toLowerCase() === 'content-id')?.value;
+        const dispoHeader = (part.headers || []).find((h) => h.name?.toLowerCase() === 'content-disposition')?.value || '';
+        attachments.push({
+          id: attachmentId,
+          filename,
+          mimeType: part.mimeType || null,
+          size: part.body?.size || 0,
+          contentId: contentIdHeader ? contentIdHeader.replace(/[<>]/g, '').trim() : null,
+          isInline: dispoHeader.toLowerCase().startsWith('inline'),
+        });
+      }
+      if (part.parts) walk(part.parts);
+    }
+  }
+  // Top-level payload kan zelf parts hebben, of zelf een part zijn met een attachment
+  walk(payload?.parts || (payload ? [payload] : []));
+  return attachments;
+}
+
 // ===== Channel account index helpers =====
 function getAccountIndex(channel) {
   try {
@@ -134,8 +162,10 @@ function persistMessage(channel, msg) {
     }
   }
 
-  // Body
+  // Body + attachments
   const { html, text } = extractBody(payload);
+  const attachments = extractAttachments(payload);
+  const attachmentsJson = attachments.length ? JSON.stringify(attachments) : null;
 
   // Contact (voor inbound: afzender; voor outbound: eerste ontvanger)
   let contactEmail = from.email;
@@ -168,11 +198,11 @@ function persistMessage(channel, msg) {
     INSERT OR IGNORE INTO messages (
       id, external_id, channel_id, contact_id, direction, subject, snippet,
       body_html, body_text, deep_link, thread_id, in_reply_to,
-      status, priority, received_at
+      status, priority, received_at, attachments_json
     ) VALUES (
       @id, @external_id, @channel_id, @contact_id, @direction, @subject, @snippet,
       @body_html, @body_text, @deep_link, @thread_id, @in_reply_to,
-      @status, 'medium', @received_at
+      @status, 'medium', @received_at, @attachments_json
     )
   `);
 
@@ -192,10 +222,11 @@ function persistMessage(channel, msg) {
     in_reply_to: inReplyTo,
     status,
     received_at: receivedAt,
+    attachments_json: attachmentsJson,
   });
 
   if (result.changes === 0) {
-    // Already existed — update body en metadata
+    // Bestaat al — update body en metadata + backfill attachments_json indien nog leeg
     db.prepare(`
       UPDATE messages SET
         snippet = COALESCE(@snippet, snippet),
@@ -204,9 +235,10 @@ function persistMessage(channel, msg) {
         body_text = COALESCE(@body_text, body_text),
         thread_id = COALESCE(@thread_id, thread_id),
         contact_id = COALESCE(contact_id, @contact_id),
+        attachments_json = COALESCE(NULLIF(attachments_json, ''), @attachments_json),
         updated_at = datetime('now')
       WHERE channel_id = @channel_id AND external_id = @external_id
-    `).run({ snippet, subject, body_html: html, body_text: text, thread_id: msg.threadId, contact_id: contactId, channel_id: channel.id, external_id: msg.id });
+    `).run({ snippet, subject, body_html: html, body_text: text, thread_id: msg.threadId, contact_id: contactId, attachments_json: attachmentsJson, channel_id: channel.id, external_id: msg.id });
     return { inserted: false, message_id: null, contact_id: contactId };
   }
 
@@ -223,29 +255,31 @@ function persistMessage(channel, msg) {
     }
   }
 
-  // Auto-done: outbound email via Gmail web/app → markeer open inbound in dezelfde thread als beantwoord
+  // Auto-done: outbound email → markeer ALLE open inbound in dezelfde thread als beantwoord
   if (isOutbound && msg.threadId) {
-    const openInbound = db.prepare(`
+    const openInboundRows = db.prepare(`
       SELECT id, contact_id FROM messages
       WHERE thread_id = ? AND direction = 'inbound' AND status = 'open' AND id != ?
-      ORDER BY received_at DESC LIMIT 1
-    `).get(msg.threadId, newId);
+    `).all(msg.threadId, newId);
 
-    if (openInbound) {
+    if (openInboundRows.length) {
       const noteText = 'Beantwoord via Gmail';
-      db.prepare(`
+      const upd = db.prepare(`
         UPDATE messages SET
           status = 'done', done_at = datetime('now'),
           done_category = 'replied', done_note = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).run(noteText, openInbound.id);
-      try {
-        db.prepare(`
-          INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, note, outcome)
-          VALUES (?, ?, ?, 'replied', 'email', ?, 'sent')
-        `).run(uuid(), openInbound.id, openInbound.contact_id, noteText);
-      } catch (e) { console.error('auto-done log fail:', e.message); }
-      console.log(`✅ Auto-done: bericht ${openInbound.id} gemarkeerd als beantwoord (${noteText})`);
+      `);
+      const logIns = db.prepare(`
+        INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, note, outcome)
+        VALUES (?, ?, ?, 'replied', 'email', ?, 'sent')
+      `);
+      for (const row of openInboundRows) {
+        upd.run(noteText, row.id);
+        try { logIns.run(uuid(), row.id, row.contact_id, noteText); }
+        catch (e) { console.error('auto-done log fail:', e.message); }
+      }
+      console.log(`✅ Auto-done: ${openInboundRows.length} email(s) in thread ${msg.threadId} gemarkeerd als beantwoord`);
     }
   }
 

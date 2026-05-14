@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { google } from 'googleapis';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
 import { sendReply, sendNew } from '../services/gmail-send.js';
 import { markAsReadInGmail } from '../services/gmail-labels.js';
+import { getClient } from '../services/gmail-oauth.js';
 import { matchContact } from '../services/contact-matcher.js';
 import * as unipile from '../services/unipile.js';
 
@@ -43,11 +45,76 @@ const MESSAGE_SELECT = `
 `;
 
 // GET /api/messages
+// Voor status='open' groeperen we per thread: 1 rij per conversatie met message_count.
+// Voor andere statussen (done/snoozed/etc) blijven we per-message tonen (logboek detail).
 router.get('/', (req, res) => {
   const { status, channel_type, channel_id, contact_id, search, priority } = req.query;
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const offset = parseInt(req.query.offset) || 0;
 
+  const groupByThread = status === 'open';
+
+  // ===== Gegroepeerd: 1 rij per thread (inbox-view) =====
+  if (groupByThread) {
+    const where = ["m.status = 'open'"];
+    const params = {};
+    if (channel_type) { where.push('ch.type = @channel_type'); params.channel_type = channel_type; }
+    if (channel_id) { where.push('m.channel_id = @channel_id'); params.channel_id = channel_id; }
+    if (contact_id) { where.push('m.contact_id = @contact_id'); params.contact_id = contact_id; }
+    if (priority) { where.push('m.priority = @priority'); params.priority = priority; }
+    if (search) {
+      where.push(`(m.snippet LIKE @search OR m.subject LIKE @search OR c.name LIKE @search OR m.done_note LIKE @search OR m.body_text LIKE @search)`);
+      params.search = `%${search}%`;
+    }
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+
+    // Stap 1 — vind voor elke thread de id van het laatste OPEN bericht (matched ook contact/channel filters)
+    // We tellen tegelijk hoeveel open berichten er in die thread zitten.
+    const latestSql = `
+      SELECT
+        m.id AS latest_id,
+        COALESCE(m.thread_id, m.id) AS thread_key,
+        COUNT(*) OVER (PARTITION BY COALESCE(m.thread_id, m.id)) AS thread_open_count,
+        ROW_NUMBER() OVER (
+          PARTITION BY COALESCE(m.thread_id, m.id)
+          ORDER BY m.received_at DESC
+        ) AS rn
+      FROM messages m
+      LEFT JOIN contacts c ON c.id = m.contact_id
+      LEFT JOIN channels ch ON ch.id = m.channel_id
+      ${whereSql}
+    `;
+    const latestRows = db.prepare(`
+      SELECT latest_id, thread_key, thread_open_count
+      FROM (${latestSql})
+      WHERE rn = 1
+    `).all(params);
+
+    const total = latestRows.length;
+    const pageRowsMeta = latestRows
+      .slice() // safe copy
+      .sort(() => 0) // keep order from SQL (latest first); will sort by received below
+      .slice(offset, offset + limit);
+
+    if (pageRowsMeta.length === 0) {
+      return res.json({ messages: [], total, limit, offset });
+    }
+
+    // Stap 2 — haal full message rows op voor deze laatste-ids
+    const placeholders = pageRowsMeta.map((_, i) => `@id${i}`).join(', ');
+    const idParams = Object.fromEntries(pageRowsMeta.map((r, i) => [`id${i}`, r.latest_id]));
+    const fullRows = db.prepare(`${MESSAGE_SELECT} WHERE m.id IN (${placeholders})`).all(idParams);
+
+    // Stap 3 — koppel thread_open_count en sorteer op received_at desc
+    const countByLatest = new Map(pageRowsMeta.map((r) => [r.latest_id, r.thread_open_count]));
+    const enriched = fullRows
+      .map((r) => ({ ...r, message_count: countByLatest.get(r.id) || 1 }))
+      .sort((a, b) => new Date(b.received_at) - new Date(a.received_at));
+
+    return res.json({ messages: enriched, total, limit, offset });
+  }
+
+  // ===== Per-message (done/snoozed/archived/logboek) =====
   const where = [];
   const params = {};
 
@@ -69,18 +136,14 @@ router.get('/', (req, res) => {
   if (priority) { where.push('m.priority = @priority'); params.priority = priority; }
 
   if (search) {
-    // FTS5 voor done-status (logboek) — alleen pure tekstmatch in snippet/subject/done_note
-    // LIKE-fallback voor andere statussen of bij FTS errors
     const useFts = (status === 'done');
     if (useFts) {
-      // Escape: vervang " met "" en wrap in quotes; voeg * voor prefix match
       const cleaned = String(search).replace(/[^\p{L}\p{N}\s@._-]/gu, ' ').trim();
       if (cleaned.length >= 2) {
         const ftsQuery = `"${cleaned.replace(/"/g, '""')}"*`;
         where.push('m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH @ftsQuery)');
         params.ftsQuery = ftsQuery;
       } else {
-        // Te kort voor FTS, fallback LIKE
         where.push(`(m.snippet LIKE @search OR m.subject LIKE @search OR c.name LIKE @search OR m.done_note LIKE @search)`);
         params.search = `%${search}%`;
       }
@@ -156,6 +219,133 @@ router.delete('/:id/pin', (req, res) => {
   res.json({ ok: true, thread_id: m.thread_id, removed: r.changes });
 });
 
+// GET /api/messages/:id/thread-summary — basale samenvatting (zonder AI)
+router.get('/:id/thread-summary', (req, res) => {
+  const msg = db.prepare('SELECT id, thread_id FROM messages WHERE id = ?').get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+
+  const threadKey = msg.thread_id || msg.id;
+  // Voor berichten zonder thread_id: alleen het bericht zelf
+  const whereSql = msg.thread_id
+    ? `WHERE m.thread_id = ?`
+    : `WHERE m.id = ?`;
+  const params = msg.thread_id ? [msg.thread_id] : [msg.id];
+
+  const rows = db.prepare(`
+    SELECT m.id, m.subject, m.snippet, m.body_text, m.received_at, m.direction,
+           m.status, m.attachments_json,
+           c.id AS contact_id, c.name AS contact_name,
+           c.avatar_initials AS contact_initials, c.avatar_color AS contact_color,
+           ch.type AS channel_type, ch.label AS channel_label, ch.account_email AS channel_account
+    FROM messages m
+    LEFT JOIN contacts c ON c.id = m.contact_id
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    ${whereSql}
+    ORDER BY m.received_at ASC
+  `).all(...params);
+
+  // Deelnemers — gebruik contact-id om uniek te zijn, val terug op naam
+  const seen = new Map();
+  for (const r of rows) {
+    if (r.direction === 'outbound') continue;
+    const key = r.contact_id || r.contact_name || r.channel_account || 'unknown';
+    if (!seen.has(key)) {
+      seen.set(key, {
+        id: r.contact_id || null,
+        name: r.contact_name || r.channel_account || 'Onbekend',
+        initials: r.contact_initials || null,
+        color: r.contact_color || null,
+      });
+    }
+  }
+  const participants = [...seen.values()];
+
+  let attachmentCount = 0;
+  for (const r of rows) {
+    if (!r.attachments_json) continue;
+    try {
+      const arr = JSON.parse(r.attachments_json);
+      if (Array.isArray(arr)) {
+        attachmentCount += arr.filter((a) => !a.isInline).length;
+      }
+    } catch { /* ignore */ }
+  }
+
+  const inboundCount = rows.filter((r) => r.direction === 'inbound').length;
+  const outboundCount = rows.filter((r) => r.direction === 'outbound').length;
+  const firstMsg = rows[0] || null;
+  const lastMsg = rows[rows.length - 1] || null;
+  const subject = rows.find((r) => r.subject)?.subject || null;
+
+  res.json({
+    thread_key: threadKey,
+    channel_type: lastMsg?.channel_type || null,
+    channel_label: lastMsg?.channel_label || null,
+    subject,
+    participants,
+    total_messages: rows.length,
+    inbound_count: inboundCount,
+    outbound_count: outboundCount,
+    first_message_at: firstMsg?.received_at || null,
+    last_message_at: lastMsg?.received_at || null,
+    last_sender: lastMsg ? (lastMsg.direction === 'outbound' ? 'Jij' : lastMsg.contact_name || 'Onbekend') : null,
+    last_snippet: lastMsg?.snippet ? lastMsg.snippet.slice(0, 200) : null,
+    attachment_count: attachmentCount,
+    has_attachments: attachmentCount > 0,
+    // Placeholders voor stap 11 (AI):
+    ai_summary: null,
+    ai_status_items: null,
+    ai_pending_actions: null,
+  });
+});
+
+// GET /api/messages/:id/attachment/:attachmentId — proxy de bijlage via Gmail API
+router.get('/:id/attachment/:attachmentId', async (req, res) => {
+  const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+
+  const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(msg.channel_id);
+  if (!channel || channel.type !== 'email') {
+    return res.status(400).json({ error: 'Bijlage-download alleen voor email-kanalen' });
+  }
+  if (!msg.external_id) {
+    return res.status(400).json({ error: 'Bericht heeft geen Gmail external_id' });
+  }
+
+  try {
+    const client = getClient(msg.channel_id);
+    if (!client) return res.status(400).json({ error: 'Email-kanaal niet verbonden' });
+
+    const gmail = google.gmail({ version: 'v1', auth: client });
+    const { data } = await gmail.users.messages.attachments.get({
+      userId: 'me',
+      messageId: msg.external_id,
+      id: req.params.attachmentId,
+    });
+    if (!data?.data) return res.status(404).json({ error: 'Bijlage niet gevonden bij Gmail' });
+
+    const buffer = Buffer.from(data.data, 'base64url');
+
+    // Metadata uit attachments_json voor mime + filename
+    let meta = null;
+    try {
+      const list = msg.attachments_json ? JSON.parse(msg.attachments_json) : [];
+      meta = list.find((a) => a.id === req.params.attachmentId) || null;
+    } catch { /* ignore */ }
+
+    const mimeType = meta?.mimeType || 'application/octet-stream';
+    const filename = (meta?.filename || 'attachment').replace(/[\r\n"]/g, '_');
+    res.setHeader('Content-Type', mimeType);
+    // inline zodat <img src=…> en preview werken; download via browser-save
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(buffer);
+  } catch (e) {
+    console.error('attachment fetch fail:', e.message);
+    res.status(500).json({ error: e.message || 'Bijlage ophalen mislukt' });
+  }
+});
+
 // GET /api/messages/:id
 router.get('/:id', (req, res) => {
   const row = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
@@ -221,18 +411,19 @@ router.post('/:id/reply', async (req, res, next) => {
           received_at: new Date().toISOString(),
         });
 
-        // Auto-done op het originele inbound bericht (de UI biedt een "Houd open" undo)
-        const autoDone = db.prepare(`
+        // Auto-done op alle open berichten in dezelfde thread (UI biedt "Houd open" undo)
+        const threadOpenIds = openIdsInThread(req.params.id);
+        const upStmt = db.prepare(`
           UPDATE messages SET
-            status = 'done',
-            done_at = datetime('now'),
-            done_category = 'replied',
-            done_note = 'Beantwoord via Comm Hub',
+            status = 'done', done_at = datetime('now'),
+            done_category = 'replied', done_note = 'Beantwoord via Comm Hub',
             updated_at = datetime('now')
-          WHERE id = ? AND status != 'done'
-        `).run(req.params.id);
-        if (autoDone.changes > 0) {
-          logInteraction(req.params.id, 'replied', 'Beantwoord via Comm Hub', 'sent');
+          WHERE id = ? AND status = 'open'
+        `);
+        let autoDoneCount = 0;
+        for (const tid of threadOpenIds) {
+          autoDoneCount += upStmt.run(tid).changes;
+          logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
         }
 
         return res.json({
@@ -240,7 +431,8 @@ router.post('/:id/reply', async (req, res, next) => {
           message_id: localId,
           channel_type: original.channel_type,
           original_id: req.params.id,
-          original_done: autoDone.changes > 0,
+          original_done: autoDoneCount > 0,
+          thread_done_count: autoDoneCount,
         });
       } catch (e) {
         return res.status(500).json({ error: e.message, deep_link: original.deep_link });
@@ -296,22 +488,31 @@ router.post('/:id/reply', async (req, res, next) => {
       received_at: new Date().toISOString(),
     });
 
-    // Auto-done op het originele inbound bericht (UI biedt een "Houd open" undo)
-    const autoDone = db.prepare(`
+    // Auto-done op alle open berichten in dezelfde thread (UI biedt "Houd open" undo)
+    const threadOpenIds = openIdsInThread(req.params.id);
+    const upStmt = db.prepare(`
       UPDATE messages SET
-        status = 'done',
-        done_at = datetime('now'),
-        done_category = 'replied',
-        done_note = 'Beantwoord via Comm Hub',
+        status = 'done', done_at = datetime('now'),
+        done_category = 'replied', done_note = 'Beantwoord via Comm Hub',
         updated_at = datetime('now')
-      WHERE id = ? AND status != 'done'
-    `).run(req.params.id);
-    if (autoDone.changes > 0) {
-      logInteraction(req.params.id, 'replied', 'Beantwoord via Comm Hub', 'sent');
+      WHERE id = ? AND status = 'open'
+    `);
+    let autoDoneCount = 0;
+    for (const tid of threadOpenIds) {
+      autoDoneCount += upStmt.run(tid).changes;
+      logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
     }
 
-    // Best-effort: ook in Gmail markeren als gelezen
-    if (original.external_id) {
+    // Best-effort: ook in Gmail markeren als gelezen voor alle email-berichten in thread
+    if (threadOpenIds.length) {
+      const placeholders = threadOpenIds.map(() => '?').join(',');
+      const emailRows = db.prepare(`
+        SELECT m.external_id, m.channel_id FROM messages m
+        LEFT JOIN channels ch ON ch.id = m.channel_id
+        WHERE m.id IN (${placeholders}) AND ch.type = 'email' AND m.external_id IS NOT NULL
+      `).all(...threadOpenIds);
+      for (const e of emailRows) markAsReadInGmail(e.channel_id, e.external_id);
+    } else if (original.external_id) {
       markAsReadInGmail(original.channel_id, original.external_id);
     }
 
@@ -322,7 +523,8 @@ router.post('/:id/reply', async (req, res, next) => {
       thread_id: result.threadId,
       from: result.fromEmail,
       original_id: req.params.id,
-      original_done: autoDone.changes > 0,
+      original_done: autoDoneCount > 0,
+      thread_done_count: autoDoneCount,
     });
   } catch (e) { next(e); }
 });
@@ -400,16 +602,19 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
       attachments_json: JSON.stringify(localAttachments),
     });
 
-    // Auto-done op het origineel (zelfde flow als gewone reply)
-    const autoDone = db.prepare(`
+    // Auto-done op alle open berichten in dezelfde thread
+    const threadOpenIds = openIdsInThread(req.params.id);
+    const upStmt = db.prepare(`
       UPDATE messages SET
         status = 'done', done_at = datetime('now'),
         done_category = 'replied', done_note = 'Beantwoord via Comm Hub',
         updated_at = datetime('now')
-      WHERE id = ? AND status != 'done'
-    `).run(req.params.id);
-    if (autoDone.changes > 0) {
-      logInteraction(req.params.id, 'replied', 'Beantwoord via Comm Hub', 'sent');
+      WHERE id = ? AND status = 'open'
+    `);
+    let autoDoneCount = 0;
+    for (const tid of threadOpenIds) {
+      autoDoneCount += upStmt.run(tid).changes;
+      logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
     }
 
     return res.json({
@@ -418,7 +623,8 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
       channel_type: original.channel_type,
       attachments: localAttachments.length,
       original_id: req.params.id,
-      original_done: autoDone.changes > 0,
+      original_done: autoDoneCount > 0,
+      thread_done_count: autoDoneCount,
     });
   } catch (e) {
     if (e?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Bestand groter dan 10MB' });
@@ -471,50 +677,72 @@ router.post('/compose', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// PATCH /api/messages/:id/snooze
+// PATCH /api/messages/:id/snooze — werkt op de hele thread (alle open berichten)
 router.patch('/:id/snooze', (req, res) => {
   const { snoozed_until } = req.body;
   if (!snoozed_until) return res.status(400).json({ error: 'snoozed_until is required' });
 
-  const result = db.prepare(`
-    UPDATE messages SET status = 'snoozed', snoozed_until = ?, updated_at = datetime('now')
-    WHERE id = ?
-  `).run(snoozed_until, req.params.id);
+  const ids = openIdsInThread(req.params.id);
+  if (ids.length === 0) return res.status(404).json({ error: 'Message not found' });
 
-  if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
-  logInteraction(req.params.id, 'snoozed');
-  res.json({ ok: true, id: req.params.id, status: 'snoozed', snoozed_until });
+  const stmt = db.prepare(`
+    UPDATE messages SET status = 'snoozed', snoozed_until = ?, updated_at = datetime('now')
+    WHERE id = ? AND status = 'open'
+  `);
+  const tx = db.transaction(() => {
+    let n = 0;
+    for (const id of ids) n += stmt.run(snoozed_until, id).changes;
+    return n;
+  });
+  const changed = tx();
+  if (changed === 0) {
+    // Fallback: probeer ook niet-open status (compat met conversation view)
+    const fb = db.prepare(`UPDATE messages SET status='snoozed', snoozed_until=?, updated_at=datetime('now') WHERE id=?`).run(snoozed_until, req.params.id);
+    if (fb.changes === 0) return res.status(404).json({ error: 'Message not found' });
+  }
+  for (const id of ids) logInteraction(id, 'snoozed');
+  res.json({ ok: true, id: req.params.id, status: 'snoozed', snoozed_until, thread_updated: changed });
 });
 
-// PATCH /api/messages/:id/done
+// PATCH /api/messages/:id/done — werkt op hele thread (alle open berichten)
 router.patch('/:id/done', (req, res) => {
   const { note, category } = req.body || {};
   const validCategories = ['replied', 'called', 'offer_sent', 'forwarded', 'not_relevant', 'other'];
   const finalCategory = validCategories.includes(category) ? category : 'other';
 
-  const result = db.prepare(`
+  const ids = openIdsInThread(req.params.id);
+  if (ids.length === 0) return res.status(404).json({ error: 'Message not found' });
+
+  const stmt = db.prepare(`
     UPDATE messages SET
-      status = 'done',
-      done_at = datetime('now'),
-      done_note = ?,
-      done_category = ?,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(note || null, finalCategory, req.params.id);
-
-  if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
-  logInteraction(req.params.id, 'done', note);
-
-  // Best-effort: markeer ook als gelezen in Gmail (alleen voor email berichten)
-  const msg = db.prepare(`
-    SELECT m.external_id, m.channel_id, ch.type FROM messages m
-    LEFT JOIN channels ch ON ch.id = m.channel_id WHERE m.id = ?
-  `).get(req.params.id);
-  if (msg?.type === 'email' && msg.external_id) {
-    markAsReadInGmail(msg.channel_id, msg.external_id); // fire-and-forget
+      status = 'done', done_at = datetime('now'),
+      done_note = ?, done_category = ?, updated_at = datetime('now')
+    WHERE id = ? AND status = 'open'
+  `);
+  const tx = db.transaction(() => {
+    let n = 0;
+    for (const id of ids) n += stmt.run(note || null, finalCategory, id).changes;
+    return n;
+  });
+  const changed = tx();
+  if (changed === 0) {
+    const fb = db.prepare(`
+      UPDATE messages SET status='done', done_at=datetime('now'), done_note=?, done_category=?, updated_at=datetime('now')
+      WHERE id=?
+    `).run(note || null, finalCategory, req.params.id);
+    if (fb.changes === 0) return res.status(404).json({ error: 'Message not found' });
   }
+  for (const id of ids) logInteraction(id, 'done', note);
 
-  res.json({ ok: true, id: req.params.id, status: 'done' });
+  // Best-effort: markeer alle email-berichten in deze thread als gelezen in Gmail
+  const emails = db.prepare(`
+    SELECT m.external_id, m.channel_id FROM messages m
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    WHERE m.id IN (${ids.map(() => '?').join(',')}) AND ch.type = 'email' AND m.external_id IS NOT NULL
+  `).all(...ids);
+  for (const e of emails) markAsReadInGmail(e.channel_id, e.external_id);
+
+  res.json({ ok: true, id: req.params.id, status: 'done', thread_updated: changed });
 });
 
 // PATCH /api/messages/:id/waiting (wacht op reactie)
@@ -553,66 +781,71 @@ router.patch('/:id/priority', (req, res) => {
   res.json({ ok: true, id: req.params.id, priority });
 });
 
-// POST /api/messages/bulk/snooze
+// POST /api/messages/bulk/snooze — elke id wordt geëxpandeerd naar zijn thread
 router.post('/bulk/snooze', (req, res) => {
   const { ids, snoozed_until } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
   if (!snoozed_until) return res.status(400).json({ error: 'snoozed_until is required' });
 
-  const stmt = db.prepare(`UPDATE messages SET status = 'snoozed', snoozed_until = ?, updated_at = datetime('now') WHERE id = ?`);
+  const expanded = [...new Set(ids.flatMap((id) => openIdsInThread(id)))];
+  const stmt = db.prepare(`UPDATE messages SET status = 'snoozed', snoozed_until = ?, updated_at = datetime('now') WHERE id = ? AND status = 'open'`);
   const tx = db.transaction(() => {
     let n = 0;
-    for (const id of ids) n += stmt.run(snoozed_until, id).changes;
+    for (const id of expanded) n += stmt.run(snoozed_until, id).changes;
     return n;
   });
   const updated = tx();
-  logInteractionsBulk(ids, 'snoozed');
+  logInteractionsBulk(expanded, 'snoozed');
   res.json({ ok: true, updated });
 });
 
-// POST /api/messages/bulk/done
+// POST /api/messages/bulk/done — elke id wordt geëxpandeerd naar zijn thread
 router.post('/bulk/done', (req, res) => {
   const { ids, note, category } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
   const validCategories = ['replied', 'called', 'offer_sent', 'forwarded', 'not_relevant', 'other'];
   const finalCategory = validCategories.includes(category) ? category : 'other';
 
+  const expanded = [...new Set(ids.flatMap((id) => openIdsInThread(id)))];
   const stmt = db.prepare(`
     UPDATE messages SET status = 'done', done_at = datetime('now'), done_note = ?, done_category = ?, updated_at = datetime('now')
-    WHERE id = ?
+    WHERE id = ? AND status = 'open'
   `);
   const tx = db.transaction(() => {
     let n = 0;
-    for (const id of ids) n += stmt.run(note || null, finalCategory, id).changes;
+    for (const id of expanded) n += stmt.run(note || null, finalCategory, id).changes;
     return n;
   });
   const updated = tx();
 
-  // Best-effort: markeer alle als gelezen in Gmail
-  const emails = db.prepare(`
-    SELECT m.external_id, m.channel_id FROM messages m
-    LEFT JOIN channels ch ON ch.id = m.channel_id
-    WHERE m.id IN (${ids.map(() => '?').join(',')}) AND ch.type = 'email' AND m.external_id IS NOT NULL
-  `).all(...ids);
-  for (const e of emails) markAsReadInGmail(e.channel_id, e.external_id);
+  if (expanded.length > 0) {
+    const placeholders = expanded.map(() => '?').join(',');
+    const emails = db.prepare(`
+      SELECT m.external_id, m.channel_id FROM messages m
+      LEFT JOIN channels ch ON ch.id = m.channel_id
+      WHERE m.id IN (${placeholders}) AND ch.type = 'email' AND m.external_id IS NOT NULL
+    `).all(...expanded);
+    for (const e of emails) markAsReadInGmail(e.channel_id, e.external_id);
+  }
 
-  logInteractionsBulk(ids, 'done', note);
+  logInteractionsBulk(expanded, 'done', note);
   res.json({ ok: true, updated });
 });
 
-// POST /api/messages/bulk/archive
+// POST /api/messages/bulk/archive — elke id wordt geëxpandeerd naar zijn thread
 router.post('/bulk/archive', (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
 
-  const stmt = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ?`);
+  const expanded = [...new Set(ids.flatMap((id) => openIdsInThread(id)))];
+  const stmt = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ? AND status = 'open'`);
   const tx = db.transaction(() => {
     let n = 0;
-    for (const id of ids) n += stmt.run(id).changes;
+    for (const id of expanded) n += stmt.run(id).changes;
     return n;
   });
   const updated = tx();
-  logInteractionsBulk(ids, 'archived');
+  logInteractionsBulk(expanded, 'archived');
   res.json({ ok: true, updated, archived: updated });
 });
 
@@ -641,14 +874,38 @@ router.post('/bulk/reopen', (req, res) => {
   res.json({ ok: true, updated, reopened: updated });
 });
 
-// DELETE /api/messages/:id (soft delete -> archived)
+// DELETE /api/messages/:id (soft delete -> archived) — werkt op hele thread (alle open berichten)
 router.delete('/:id', (req, res) => {
-  const result = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ?`)
-    .run(req.params.id);
-  if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
-  logInteraction(req.params.id, 'archived');
-  res.json({ ok: true, id: req.params.id, status: 'archived' });
+  const ids = openIdsInThread(req.params.id);
+  if (ids.length === 0) return res.status(404).json({ error: 'Message not found' });
+
+  const stmt = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ? AND status = 'open'`);
+  const tx = db.transaction(() => {
+    let n = 0;
+    for (const id of ids) n += stmt.run(id).changes;
+    return n;
+  });
+  const changed = tx();
+  if (changed === 0) {
+    const fb = db.prepare(`UPDATE messages SET status='archived', updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+    if (fb.changes === 0) return res.status(404).json({ error: 'Message not found' });
+  }
+  for (const id of ids) logInteraction(id, 'archived');
+  res.json({ ok: true, id: req.params.id, status: 'archived', thread_updated: changed });
 });
+
+// Geef alle OPEN message-ids in dezelfde thread terug (inclusief het opgegeven id).
+// Voor berichten zonder thread_id: alleen het bericht zelf.
+function openIdsInThread(messageId) {
+  const row = db.prepare('SELECT thread_id FROM messages WHERE id = ?').get(messageId);
+  if (!row) return [];
+  if (!row.thread_id) return [messageId];
+  const ids = db
+    .prepare(`SELECT id FROM messages WHERE thread_id = ? AND status = 'open'`)
+    .all(row.thread_id)
+    .map((r) => r.id);
+  return ids.length ? ids : [messageId];
+}
 
 function logInteraction(messageId, action, note, outcome) {
   const msg = db.prepare('SELECT contact_id, channel_id FROM messages WHERE id = ?').get(messageId);
