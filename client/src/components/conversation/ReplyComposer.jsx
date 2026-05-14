@@ -92,6 +92,24 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     return () => window.removeEventListener('focus-reply-composer', onFocusEvent);
   }, []);
 
+  // Listen for external "set text" (bv. Follow-up vanuit ThreadStatusBar)
+  useEffect(() => {
+    function onSetText(e) {
+      const next = typeof e.detail === 'string' ? e.detail : (e.detail?.text || '');
+      if (!next) return;
+      setText(next);
+      requestAnimationFrame(() => {
+        if (ref.current) {
+          ref.current.focus();
+          ref.current.setSelectionRange(next.length, next.length);
+          setCaret(next.length);
+        }
+      });
+    }
+    window.addEventListener('reply-composer-set-text', onSetText);
+    return () => window.removeEventListener('reply-composer-set-text', onSetText);
+  }, []);
+
   // Click-outside / Esc to close the emoji picker
   useEffect(() => {
     if (!showEmoji) return undefined;

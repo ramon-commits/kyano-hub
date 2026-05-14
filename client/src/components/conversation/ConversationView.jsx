@@ -137,6 +137,19 @@ export default function ConversationView({
     }
   };
 
+  // Trigger vanuit ThreadStatusBar: genereer + zet direct in textarea via window event
+  const handleFollowUpFromStatus = async () => {
+    const result = await handleFollowUp();
+    if (result?.text) {
+      window.dispatchEvent(new CustomEvent('reply-composer-set-text', { detail: result.text }));
+    }
+    return result;
+  };
+
+  // Bepaal of het laatste bericht in de thread outbound is (= jij wacht op antwoord)
+  const lastThreadMsg = threadMessages[threadMessages.length - 1];
+  const showFollowUp = !!(lastThreadMsg && lastThreadMsg.direction === 'outbound');
+
   return (
     <div className="flex h-full bg-gray-50">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -218,6 +231,8 @@ export default function ConversationView({
           onSchedule={() => onSchedule?.(m)}
           onUrgent={() => onUrgent?.(m)}
           onArchive={() => onArchive?.(m)}
+          onFollowUp={handleFollowUpFromStatus}
+          showFollowUp={showFollowUp}
           currentPriority={m.priority}
         />
       </div>

@@ -93,43 +93,65 @@ export async function getChatAttendees(chatId) {
 }
 
 // ===== Mark chat as read =====
-// Best-effort: probeer eerst PATCH (huidige Unipile API), val terug op PUT bij 404/405.
-// Gooit nooit een fout — als het mislukt loggen we alleen, statuswijziging lokaal blijft staan.
+// Best-effort: probeer 3 endpoint-varianten in volgorde. Gooit nooit een fout.
+// Bij elke shape: 4xx (behalve 404/405) = stop met retry (echte fout); 404/405 = probeer volgende.
 export async function markChatAsRead(chatId) {
   if (!chatId || !isConfigured()) return { ok: false, reason: 'not_configured_or_no_chat' };
   const { apiKey } = getUnipileCreds();
-  const headers = { 'X-API-KEY': apiKey, 'Accept': 'application/json' };
+  const baseHeaders = { 'X-API-KEY': apiKey, 'Accept': 'application/json' };
+  const jsonHeaders = { ...baseHeaders, 'Content-Type': 'application/json' };
+  const encoded = encodeURIComponent(chatId);
 
-  // Primair: PATCH /api/v1/chats/{chatId} met action body
-  try {
-    const r = await fetch(new URL(baseUrl() + `/api/v1/chats/${encodeURIComponent(chatId)}`), {
+  const attempts = [
+    {
+      label: 'PATCH /chats/{id} {action: setReadStatus}',
       method: 'PATCH',
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      path: `/api/v1/chats/${encoded}`,
+      headers: jsonHeaders,
       body: JSON.stringify({ action: 'setReadStatus', value: true }),
-    });
-    if (r.ok) return { ok: true, via: 'patch' };
-    // Alleen fallback bij methode/endpoint-fout (404/405). 401/403/500 gewoon loggen.
-    if (r.status !== 404 && r.status !== 405) {
-      console.log(`Unipile mark-as-read PATCH ${r.status} voor chat ${chatId}`);
-      return { ok: false, status: r.status, via: 'patch' };
+    },
+    {
+      label: 'PATCH /chats/{id} {seen: true}',
+      method: 'PATCH',
+      path: `/api/v1/chats/${encoded}`,
+      headers: jsonHeaders,
+      body: JSON.stringify({ seen: true }),
+    },
+    {
+      label: 'PUT /chats/{id}/read',
+      method: 'PUT',
+      path: `/api/v1/chats/${encoded}/read`,
+      headers: baseHeaders,
+    },
+    {
+      label: 'POST /chats/{id}/read',
+      method: 'POST',
+      path: `/api/v1/chats/${encoded}/read`,
+      headers: baseHeaders,
+    },
+  ];
+
+  for (const a of attempts) {
+    try {
+      const r = await fetch(new URL(baseUrl() + a.path), {
+        method: a.method,
+        headers: a.headers,
+        body: a.body,
+      });
+      if (r.ok) return { ok: true, via: a.label };
+      // Definitieve fout (auth/permissions) → stop met retries, het fixt zich niet door een ander endpoint
+      if (r.status === 401 || r.status === 403) {
+        console.log(`Unipile mark-as-read ${r.status} voor chat ${chatId} (${a.label})`);
+        return { ok: false, status: r.status, via: a.label };
+      }
+      // 404/405/422 etc → probeer de volgende shape
+    } catch (e) {
+      console.log(`Unipile mark-as-read fetch fail (${chatId}, ${a.label}): ${e.message}`);
     }
-  } catch (e) {
-    console.log(`Unipile mark-as-read PATCH fail (${chatId}): ${e.message}`);
   }
 
-  // Fallback: PUT /api/v1/chats/{chatId}/read (oudere API)
-  try {
-    const r = await fetch(new URL(baseUrl() + `/api/v1/chats/${encodeURIComponent(chatId)}/read`), {
-      method: 'PUT',
-      headers,
-    });
-    if (r.ok) return { ok: true, via: 'put' };
-    console.log(`Unipile mark-as-read PUT ${r.status} voor chat ${chatId}`);
-    return { ok: false, status: r.status, via: 'put' };
-  } catch (e) {
-    console.log(`Unipile mark-as-read PUT fail (${chatId}): ${e.message}`);
-    return { ok: false, error: e.message, via: 'put' };
-  }
+  console.log(`Unipile mark-as-read: geen van de ${attempts.length} endpoint-varianten werkte voor chat ${chatId}`);
+  return { ok: false, reason: 'no_endpoint_worked' };
 }
 
 // ===== Verstuur in bestaande chat =====

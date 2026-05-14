@@ -17,32 +17,81 @@ function getConnectedEmailChannels() {
   `).all();
 }
 
-export async function listEvents({ channelId, timeMin, timeMax, maxResults = 50 } = {}) {
-  const calendar = gmailFor(channelId);
-  const { data } = await calendar.events.list({
-    calendarId: 'primary',
-    timeMin: timeMin || new Date().toISOString(),
-    timeMax: timeMax,
-    singleEvents: true,
-    orderBy: 'startTime',
-    maxResults,
-  });
+// Haal alle calendars op waar de gebruiker leesrechten op heeft (primary + gedeelde + import)
+async function listAccessibleCalendars(calendarApi) {
+  const { data } = await calendarApi.calendarList.list({ maxResults: 100 });
+  return (data.items || [])
+    .filter((c) => !c.hidden && (c.accessRole === 'owner' || c.accessRole === 'writer' || c.accessRole === 'reader'))
+    .map((c) => ({
+      id: c.id,
+      summary: c.summaryOverride || c.summary || c.id,
+      primary: !!c.primary,
+      backgroundColor: c.backgroundColor || null,
+      accessRole: c.accessRole,
+    }));
+}
 
+export async function listEvents({ channelId, timeMin, timeMax, maxResults = 50 } = {}) {
+  const calendarApi = gmailFor(channelId);
   const ch = db.prepare('SELECT account_email FROM channels WHERE id = ?').get(channelId);
-  return (data.items || []).map((e) => ({
-    id: e.id,
-    title: e.summary || '(geen titel)',
-    description: e.description || null,
-    location: e.location || null,
-    start: e.start?.dateTime || e.start?.date,
-    end: e.end?.dateTime || e.end?.date,
-    all_day: !!e.start?.date && !e.start?.dateTime,
-    attendees: (e.attendees || []).map((a) => ({ email: a.email, displayName: a.displayName, responseStatus: a.responseStatus })),
-    calendar_email: ch?.account_email || null,
-    channel_id: channelId,
-    html_link: e.htmlLink,
-    status: e.status,
-  }));
+
+  // Stap 1: alle toegankelijke calendars
+  let calendars;
+  try {
+    calendars = await listAccessibleCalendars(calendarApi);
+  } catch (e) {
+    // calendarList.list zelf faalt vrijwel altijd met dezelfde reden als events.list
+    // → gooi hetzelfde door zodat classifyCalendarError werkt
+    throw e;
+  }
+  if (calendars.length === 0) {
+    // Fallback: probeer dan primary direct (zou eigenlijk niet voorkomen)
+    calendars = [{ id: 'primary', summary: 'Primary', primary: true, accessRole: 'owner' }];
+  }
+
+  // Stap 2: events per calendar
+  const events = [];
+  const seenIds = new Set();
+  for (const cal of calendars) {
+    try {
+      const { data } = await calendarApi.events.list({
+        calendarId: cal.id,
+        timeMin: timeMin || new Date().toISOString(),
+        timeMax: timeMax,
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults,
+      });
+      for (const e of data.items || []) {
+        // Dedupe op (calendar.id, event.id) per account — een event kan via meerdere calendars zichtbaar zijn
+        const key = `${cal.id}|${e.id}`;
+        if (seenIds.has(key)) continue;
+        seenIds.add(key);
+        events.push({
+          id: e.id,
+          title: e.summary || '(geen titel)',
+          description: e.description || null,
+          location: e.location || null,
+          start: e.start?.dateTime || e.start?.date,
+          end: e.end?.dateTime || e.end?.date,
+          all_day: !!e.start?.date && !e.start?.dateTime,
+          attendees: (e.attendees || []).map((a) => ({ email: a.email, displayName: a.displayName, responseStatus: a.responseStatus })),
+          calendar_email: ch?.account_email || null,
+          calendar_id: cal.id,
+          calendar_name: cal.summary,
+          calendar_primary: cal.primary,
+          calendar_color: cal.backgroundColor,
+          channel_id: channelId,
+          html_link: e.htmlLink,
+          status: e.status,
+        });
+      }
+    } catch (e) {
+      // Per-calendar failure (bv. gedeelde calendar tijdelijk niet beschikbaar): log + ga door
+      console.log(`Calendar "${cal.summary}" (${cal.id}) skip: ${e.message}`);
+    }
+  }
+  return events;
 }
 
 function classifyCalendarError(message) {
