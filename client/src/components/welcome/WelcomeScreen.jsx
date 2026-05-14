@@ -2,9 +2,11 @@ export default function WelcomeScreen({ onGoToSettings }) {
   return (
     <div className="flex h-full flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-12">
       <div className="w-full max-w-md text-center">
-        <div className="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-2xl bg-blue-600 text-4xl font-bold text-white shadow-lg">
-          K
-        </div>
+        <img
+          src="/icon.svg"
+          alt="Kyano"
+          className="mx-auto mb-6 h-20 w-20 rounded-2xl shadow-lg"
+        />
         <h1 className="mb-2 text-2xl font-bold text-gray-900">Welkom bij Kyano Comm Hub</h1>
         <p className="mb-8 text-sm text-gray-500">
           Eén dashboard voor al je communicatie. Email, WhatsApp, LinkedIn, Calendar — alles op één plek.

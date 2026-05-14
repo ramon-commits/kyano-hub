@@ -53,12 +53,7 @@ export default function Sidebar({ active, onSelect }) {
       style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)' }}
     >
       <div className={cn('flex items-center gap-3 py-5', collapsed ? 'justify-center px-2' : 'px-5')}>
-        <div
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-lg font-bold text-white"
-          style={{ background: 'var(--accent)' }}
-        >
-          K
-        </div>
+        <img src="/icon.svg" alt="Kyano" className="h-9 w-9 shrink-0 rounded-lg" />
         {!collapsed ? (
           <div className="leading-tight">
             <div className="font-semibold text-white">Comm Hub</div>
