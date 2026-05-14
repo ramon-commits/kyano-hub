@@ -34,7 +34,7 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -148,6 +148,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
                       onClick={() => onOpenMessage(m)}
                       onSnooze={onSnooze}
                       onDone={onDone}
+                      onFastDone={onFastDone}
                       onSchedule={onSchedule}
                       onArchive={onArchive}
                       onUnpin={onUnpin}
@@ -184,6 +185,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onSchedule,
                       onClick={() => onOpenMessage(m)}
                       onSnooze={onSnooze}
                       onDone={onDone}
+                      onFastDone={onFastDone}
                       onSchedule={onSchedule}
                       onArchive={onArchive}
                       onBlock={onBlock}

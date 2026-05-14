@@ -21,6 +21,7 @@ export default function ConversationView({
   onImproveNL,
   onTranslate,
   onFollowUp,
+  onReplySent,
 }) {
   const { data: m, isLoading } = useMessage(messageId);
   const { data: thread } = useThread(messageId);
@@ -55,7 +56,16 @@ export default function ConversationView({
         cc: cc || null,
         bcc: bcc || null,
       });
-      toast.success(`Verzonden via ${result.from || m.channel_account || m.channel_label}`, 'Verstuurd');
+      if (onReplySent) {
+        onReplySent({
+          from: result.from,
+          channelLabel: m.channel_account || m.channel_label,
+          originalId: result.original_id || messageId,
+          originalDone: !!result.original_done,
+        });
+      } else {
+        toast.success(`Verzonden via ${result.from || m.channel_account || m.channel_label}`, 'Verstuurd');
+      }
       return true;
     } catch (e) {
       if (e.status === 401 || e.data?.needs_reconnect) {

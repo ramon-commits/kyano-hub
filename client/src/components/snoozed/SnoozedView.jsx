@@ -34,7 +34,7 @@ function bucketFor(message) {
   return 'later';
 }
 
-export default function SnoozedView({ onOpenMessage, onReopen, onDone, onSnooze, onArchive, onBlock, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
+export default function SnoozedView({ onOpenMessage, onReopen, onDone, onFastDone, onSnooze, onArchive, onBlock, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -122,6 +122,7 @@ export default function SnoozedView({ onOpenMessage, onReopen, onDone, onSnooze,
                           onClick={() => onOpenMessage(m)}
                           onReopen={onReopen}
                           onDone={onDone}
+                          onFastDone={onFastDone}
                           onSnooze={onSnooze}
                           onArchive={onArchive}
                           onBlock={onBlock}

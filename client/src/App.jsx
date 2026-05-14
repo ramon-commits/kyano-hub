@@ -108,6 +108,15 @@ export default function App() {
 
   const handleSnooze = (m) => setSnoozeModal({ open: true, message: m, bulkIds: null });
   const handleDone = (m) => setDoneModal({ open: true, message: m, bulkIds: null });
+  const handleFastDone = async (m) => {
+    try {
+      await doneMut.mutateAsync({ id: m.id, category: 'replied', note: null });
+      toast.success('Afgevinkt', null, { action: undoAction([m.id]) });
+      if (selectedMessageId === m.id) setSelectedMessageId(null);
+    } catch (e) {
+      toast.error(e.message || 'Afvinken mislukt');
+    }
+  };
   const handleBulkSnooze = (ids) => setSnoozeModal({ open: true, message: null, bulkIds: ids });
   const handleBulkDone = (ids) => setDoneModal({ open: true, message: null, bulkIds: ids });
   const handleSchedule = (target) => {
@@ -192,6 +201,29 @@ export default function App() {
       if (selectedMessageId === m.id) setSelectedMessageId(null);
     } catch (e) {
       toast.error(e.message);
+    }
+  };
+
+  // Toast na een succesvol verzonden reply. Backend heeft het originele bericht al auto-done gezet —
+  // de toast biedt "Houd open" als undo zodat de user het bericht weer in de inbox krijgt.
+  const onReplySent = ({ from, channelLabel, originalId, originalDone }) => {
+    const sentVia = from || channelLabel || 'het kanaal';
+    if (originalDone && originalId) {
+      toast.success(`Verzonden via ${sentVia}`, 'Verstuurd · afgehandeld', {
+        action: {
+          label: 'Houd open',
+          onClick: async () => {
+            try {
+              await reopenMut.mutateAsync({ id: originalId });
+              toast.info('Terug in inbox', 'Open gehouden');
+            } catch (e) {
+              toast.error(e.message || 'Open houden mislukt');
+            }
+          },
+        },
+      });
+    } else {
+      toast.success(`Verzonden via ${sentVia}`, 'Verstuurd');
     }
   };
 
@@ -293,6 +325,12 @@ export default function App() {
         window.dispatchEvent(new Event('focus-reply-composer'));
         return true;
       },
+      f: () => {
+        // Snel afvinken van het geopende bericht
+        if (!selectedMessageId) return false;
+        handleFastDone({ id: selectedMessageId });
+        return true;
+      },
     };
     for (const item of NAV_ITEMS) {
       if (item.shortcut) {
@@ -331,6 +369,7 @@ export default function App() {
           onImproveNL={onImproveNL}
           onTranslate={onTranslate}
           onFollowUp={onFollowUp}
+          onReplySent={onReplySent}
         />
       );
     }
@@ -342,6 +381,7 @@ export default function App() {
             onOpenMessage={openMessage}
             onSnooze={handleSnooze}
             onDone={handleDone}
+            onFastDone={handleFastDone}
             onSchedule={handleSchedule}
             onOpenContact={openContact}
             onBlock={onBlock}
@@ -362,6 +402,7 @@ export default function App() {
             onOpenMessage={openMessage}
             onReopen={onReopen}
             onDone={handleDone}
+            onFastDone={handleFastDone}
             onSnooze={handleSnooze}
             onArchive={onArchive}
             onBlock={onBlock}

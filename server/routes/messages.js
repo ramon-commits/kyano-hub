@@ -203,7 +203,28 @@ router.post('/:id/reply', async (req, res, next) => {
           thread_id: chatId,
           received_at: new Date().toISOString(),
         });
-        return res.json({ ok: true, message_id: localId, channel_type: original.channel_type });
+
+        // Auto-done op het originele inbound bericht (de UI biedt een "Houd open" undo)
+        const autoDone = db.prepare(`
+          UPDATE messages SET
+            status = 'done',
+            done_at = datetime('now'),
+            done_category = 'replied',
+            done_note = 'Beantwoord via Comm Hub',
+            updated_at = datetime('now')
+          WHERE id = ? AND status != 'done'
+        `).run(req.params.id);
+        if (autoDone.changes > 0) {
+          logInteraction(req.params.id, 'replied', 'Beantwoord via Comm Hub', 'sent');
+        }
+
+        return res.json({
+          ok: true,
+          message_id: localId,
+          channel_type: original.channel_type,
+          original_id: req.params.id,
+          original_done: autoDone.changes > 0,
+        });
       } catch (e) {
         return res.status(500).json({ error: e.message, deep_link: original.deep_link });
       }
@@ -258,15 +279,34 @@ router.post('/:id/reply', async (req, res, next) => {
       received_at: new Date().toISOString(),
     });
 
-    // Interaction log
-    try {
-      db.prepare(`
-        INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, outcome)
-        VALUES (?, ?, ?, 'replied', 'email', 'sent')
-      `).run(uuid(), localId, original.contact_id);
-    } catch (e) { console.error('log fail:', e.message); }
+    // Auto-done op het originele inbound bericht (UI biedt een "Houd open" undo)
+    const autoDone = db.prepare(`
+      UPDATE messages SET
+        status = 'done',
+        done_at = datetime('now'),
+        done_category = 'replied',
+        done_note = 'Beantwoord via Comm Hub',
+        updated_at = datetime('now')
+      WHERE id = ? AND status != 'done'
+    `).run(req.params.id);
+    if (autoDone.changes > 0) {
+      logInteraction(req.params.id, 'replied', 'Beantwoord via Comm Hub', 'sent');
+    }
 
-    res.json({ ok: true, message_id: localId, gmail_message_id: result.messageId, thread_id: result.threadId, from: result.fromEmail });
+    // Best-effort: ook in Gmail markeren als gelezen
+    if (original.external_id) {
+      markAsReadInGmail(original.channel_id, original.external_id);
+    }
+
+    res.json({
+      ok: true,
+      message_id: localId,
+      gmail_message_id: result.messageId,
+      thread_id: result.threadId,
+      from: result.fromEmail,
+      original_id: req.params.id,
+      original_done: autoDone.changes > 0,
+    });
   } catch (e) { next(e); }
 });
 
@@ -380,6 +420,7 @@ router.patch('/:id/reopen', (req, res) => {
     WHERE id = ?
   `).run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
+  logInteraction(req.params.id, 'opened', 'Heropend');
   res.json({ ok: true, id: req.params.id, status: 'open' });
 });
 
@@ -408,6 +449,7 @@ router.post('/bulk/snooze', (req, res) => {
     return n;
   });
   const updated = tx();
+  logInteractionsBulk(ids, 'snoozed');
   res.json({ ok: true, updated });
 });
 
@@ -437,6 +479,7 @@ router.post('/bulk/done', (req, res) => {
   `).all(...ids);
   for (const e of emails) markAsReadInGmail(e.channel_id, e.external_id);
 
+  logInteractionsBulk(ids, 'done', note);
   res.json({ ok: true, updated });
 });
 
@@ -452,6 +495,7 @@ router.post('/bulk/archive', (req, res) => {
     return n;
   });
   const updated = tx();
+  logInteractionsBulk(ids, 'archived');
   res.json({ ok: true, updated, archived: updated });
 });
 
@@ -476,6 +520,7 @@ router.post('/bulk/reopen', (req, res) => {
     return n;
   });
   const updated = tx();
+  logInteractionsBulk(ids, 'opened', 'Heropend');
   res.json({ ok: true, updated, reopened: updated });
 });
 
@@ -484,21 +529,26 @@ router.delete('/:id', (req, res) => {
   const result = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ?`)
     .run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Message not found' });
+  logInteraction(req.params.id, 'archived');
   res.json({ ok: true, id: req.params.id, status: 'archived' });
 });
 
-function logInteraction(messageId, action, note) {
+function logInteraction(messageId, action, note, outcome) {
   const msg = db.prepare('SELECT contact_id, channel_id FROM messages WHERE id = ?').get(messageId);
   if (!msg) return;
   const channelType = db.prepare('SELECT type FROM channels WHERE id = ?').get(msg.channel_id)?.type;
   try {
     db.prepare(`
-      INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, note)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(uuid(), messageId, msg.contact_id, action, channelType, note || null);
+      INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, note, outcome)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(uuid(), messageId, msg.contact_id, action, channelType, note || null, outcome || null);
   } catch (e) {
     console.error('Failed to log interaction:', e.message);
   }
+}
+
+function logInteractionsBulk(ids, action, note) {
+  for (const id of ids) logInteraction(id, action, note);
 }
 
 export default router;

@@ -4,7 +4,7 @@ import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Badge from '../shared/Badge.jsx';
 import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
-export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onSchedule, onReopen, onArchive, onBlock, onPin, onUnpin, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
+export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onPin, onUnpin, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
 
@@ -92,8 +92,13 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
               <i className="fa-solid fa-clock" />
             </ActionBtn>
           ) : null}
+          {onFastDone ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onFastDone(m); }} title="Snel afvinken (f)" hoverColor="hover:bg-emerald-50 hover:text-emerald-700">
+              <i className="fa-solid fa-check" />
+            </ActionBtn>
+          ) : null}
           {onDone ? (
-            <ActionBtn onClick={(e) => { e.stopPropagation(); onDone(m); }} title="Afhandelen" hoverColor="hover:bg-green-50 hover:text-green-700">
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onDone(m); }} title="Afhandelen met notitie" hoverColor="hover:bg-green-50 hover:text-green-700">
               <i className="fa-solid fa-circle-check" />
             </ActionBtn>
           ) : null}

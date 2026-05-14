@@ -223,6 +223,32 @@ function persistMessage(channel, msg) {
     }
   }
 
+  // Auto-done: outbound email via Gmail web/app → markeer open inbound in dezelfde thread als beantwoord
+  if (isOutbound && msg.threadId) {
+    const openInbound = db.prepare(`
+      SELECT id, contact_id FROM messages
+      WHERE thread_id = ? AND direction = 'inbound' AND status = 'open' AND id != ?
+      ORDER BY received_at DESC LIMIT 1
+    `).get(msg.threadId, newId);
+
+    if (openInbound) {
+      const noteText = 'Beantwoord via Gmail';
+      db.prepare(`
+        UPDATE messages SET
+          status = 'done', done_at = datetime('now'),
+          done_category = 'replied', done_note = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(noteText, openInbound.id);
+      try {
+        db.prepare(`
+          INSERT INTO interaction_logs (id, message_id, contact_id, action, channel_type, note, outcome)
+          VALUES (?, ?, ?, 'replied', 'email', ?, 'sent')
+        `).run(uuid(), openInbound.id, openInbound.contact_id, noteText);
+      } catch (e) { console.error('auto-done log fail:', e.message); }
+      console.log(`✅ Auto-done: bericht ${openInbound.id} gemarkeerd als beantwoord (${noteText})`);
+    }
+  }
+
   return { inserted: true, message_id: newId, contact_id: contactId, woken };
 }
 
