@@ -31,9 +31,28 @@ async function listAccessibleCalendars(calendarApi) {
     }));
 }
 
+// Normaliseer een datum-input naar RFC3339 (volledige ISO met tijd + zone).
+// Google Calendar API accepteert geen "YYYY-MM-DD" — alleen volledig RFC3339.
+function toRfc3339(input, fallback) {
+  if (!input) return fallback;
+  // Al volledig ISO met tijd?
+  if (typeof input === 'string' && /T\d{2}:\d{2}/.test(input)) {
+    // Mist timezone? Voeg Z toe.
+    if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(input)) return `${input}Z`;
+    return input;
+  }
+  // Date-only ("YYYY-MM-DD") of Date object → zet om naar volledige ISO
+  const d = new Date(input);
+  if (isNaN(d.getTime())) return fallback;
+  return d.toISOString();
+}
+
 export async function listEvents({ channelId, timeMin, timeMax, maxResults = 50 } = {}) {
   const calendarApi = gmailFor(channelId);
   const ch = db.prepare('SELECT account_email FROM channels WHERE id = ?').get(channelId);
+
+  const normalizedTimeMin = toRfc3339(timeMin, new Date().toISOString());
+  const normalizedTimeMax = toRfc3339(timeMax, new Date(Date.now() + 7 * 86400000).toISOString());
 
   // Stap 1: alle toegankelijke calendars
   let calendars;
@@ -54,14 +73,31 @@ export async function listEvents({ channelId, timeMin, timeMax, maxResults = 50 
   const seenIds = new Set();
   for (const cal of calendars) {
     try {
-      const { data } = await calendarApi.events.list({
-        calendarId: cal.id,
-        timeMin: timeMin || new Date().toISOString(),
-        timeMax: timeMax,
-        singleEvents: true,
-        orderBy: 'startTime',
-        maxResults,
-      });
+      let data;
+      try {
+        // Poging 1: met orderBy: 'startTime'
+        const res = await calendarApi.events.list({
+          calendarId: cal.id,
+          timeMin: normalizedTimeMin,
+          timeMax: normalizedTimeMax,
+          singleEvents: true,
+          orderBy: 'startTime',
+          maxResults,
+        });
+        data = res.data;
+      } catch (e1) {
+        // Poging 2: zonder orderBy — sommige shared/group calendars geven "Bad Request"
+        // op orderBy: 'startTime' (vooral resource/room calendars en bepaalde gedeelde agendas).
+        console.log(`Calendar "${cal.summary}" retry without orderBy: ${e1.message}`);
+        const res = await calendarApi.events.list({
+          calendarId: cal.id,
+          timeMin: normalizedTimeMin,
+          timeMax: normalizedTimeMax,
+          singleEvents: true,
+          maxResults,
+        });
+        data = res.data;
+      }
       for (const e of data.items || []) {
         // Dedupe op (calendar.id, event.id) per account — een event kan via meerdere calendars zichtbaar zijn
         const key = `${cal.id}|${e.id}`;
