@@ -96,7 +96,13 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
               <i className="fa-solid fa-check" />
             </ActionBtn>
           ) : null}
-          {/* 2. Archiveer */}
+          {/* 2. Snooze */}
+          {onSnooze ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onSnooze(m); }} title="Snooze (s)" hoverColor="hover:bg-orange-50 hover:text-orange-700">
+              <i className="fa-solid fa-clock" />
+            </ActionBtn>
+          ) : null}
+          {/* 3. Archiveer */}
           {onArchive ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onArchive(m); }} title="Archiveer (e)" hoverColor="hover:bg-gray-100 hover:text-gray-700">
               <i className="fa-solid fa-box-archive" />
