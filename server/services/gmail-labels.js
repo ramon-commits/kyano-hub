@@ -21,3 +21,26 @@ export async function markAsReadInGmail(channelId, externalId) {
     return { ok: false, reason: 'api_error', error: e.message };
   }
 }
+
+// Best-effort: markeer een Gmail message als SPAM (verplaatst naar Spam folder)
+export async function markAsSpamInGmail(channelId, externalId) {
+  if (!channelId || !externalId) return { ok: false, reason: 'missing_ids' };
+  try {
+    const client = getClient(channelId);
+    if (!client) return { ok: false, reason: 'not_connected' };
+
+    const gmail = google.gmail({ version: 'v1', auth: client });
+    await gmail.users.messages.modify({
+      userId: 'me',
+      id: externalId,
+      requestBody: {
+        addLabelIds: ['SPAM'],
+        removeLabelIds: ['INBOX', 'UNREAD'],
+      },
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error(`Gmail markAsSpam failed (channel=${channelId} msg=${externalId}):`, e.message);
+    return { ok: false, reason: 'api_error', error: e.message };
+  }
+}

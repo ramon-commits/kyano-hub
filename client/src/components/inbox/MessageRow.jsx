@@ -103,7 +103,7 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
             </ActionBtn>
           ) : null}
           {/* 3. Blokkeer/spam */}
-          {onBlock && m.contact_email ? (
+          {onBlock ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onBlock(m); }} title="Blokkeer afzender (x)" hoverColor="hover:bg-red-50 hover:text-red-700">
               <i className="fa-solid fa-ban" />
             </ActionBtn>

@@ -173,14 +173,21 @@ router.get('/:id', (req, res) => {
 
 // GET /api/contacts/:id/messages
 router.get('/:id/messages', (req, res) => {
+  const { status } = req.query;
+  const where = ['m.contact_id = @id'];
+  const params = { id: req.params.id };
+  if (status) {
+    where.push('m.status = @status');
+    params.status = status;
+  }
   const rows = db.prepare(`
     SELECT m.*, ch.type AS channel_type, ch.label AS channel_label
     FROM messages m
     LEFT JOIN channels ch ON ch.id = m.channel_id
-    WHERE m.contact_id = ?
+    WHERE ${where.join(' AND ')}
     ORDER BY m.received_at DESC
-    LIMIT 200
-  `).all(req.params.id);
+    LIMIT 500
+  `).all(params);
   res.json({ messages: rows });
 });
 

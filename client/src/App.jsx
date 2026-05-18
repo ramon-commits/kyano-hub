@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Sidebar from './components/layout/Sidebar.jsx';
 import InboxView from './components/inbox/InboxView.jsx';
@@ -48,6 +48,18 @@ export default function App() {
   const [view, setView] = useState('inbox');
   const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [selectedContactId, setSelectedContactId] = useState(null);
+
+  // Volgorde van zichtbare berichten in de huidige lijst-view (Inbox/Snoozed) — voor auto-advance
+  const messageOrderRef = useRef([]);
+  const handleMessagesChange = useCallback((ids) => { messageOrderRef.current = ids || []; }, []);
+  const advanceSelection = useCallback((currentId) => {
+    const list = messageOrderRef.current;
+    if (!list?.length) { setSelectedMessageId(null); return; }
+    const i = list.indexOf(currentId);
+    if (i === -1) { setSelectedMessageId(null); return; }
+    const next = list[i + 1] || list[i - 1] || null;
+    setSelectedMessageId(next && next !== currentId ? next : null);
+  }, []);
 
   const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null, bulkIds: null });
   const [doneModal, setDoneModal] = useState({ open: false, message: null, bulkIds: null });
@@ -113,7 +125,7 @@ export default function App() {
     try {
       await doneMut.mutateAsync({ id: m.id, category: 'replied', note: null });
       toast.success('Afgevinkt', null, { action: undoAction([m.id]) });
-      if (selectedMessageId === m.id) setSelectedMessageId(null);
+      if (selectedMessageId === m.id) advanceSelection(m.id);
     } catch (e) {
       toast.error(e.message || 'Afvinken mislukt');
     }
@@ -136,7 +148,7 @@ export default function App() {
       } else if (msg) {
         await snoozeMut.mutateAsync({ id: msg.id, snoozed_until: snoozedUntilISO });
         toast.success(`Komt terug ${label}`, 'Snoozed', { action: undoAction([msg.id]) });
-        if (selectedMessageId === msg.id) setSelectedMessageId(null);
+        if (selectedMessageId === msg.id) advanceSelection(msg.id);
       }
     } catch (e) {
       toast.error(e.message, 'Snooze mislukt');
@@ -150,7 +162,7 @@ export default function App() {
     try {
       await waitingMut.mutateAsync({ id: msg.id });
       toast.info('Status: wacht op reactie', 'Bewaard');
-      if (selectedMessageId === msg.id) setSelectedMessageId(null);
+      if (selectedMessageId === msg.id) advanceSelection(msg.id);
     } catch (e) {
       toast.error(e.message);
     }
@@ -166,7 +178,7 @@ export default function App() {
       } else if (msg) {
         await doneMut.mutateAsync({ id: msg.id, category, note });
         toast.success('Staat in je logboek', 'Afgehandeld', { action: undoAction([msg.id]) });
-        if (selectedMessageId === msg.id) setSelectedMessageId(null);
+        if (selectedMessageId === msg.id) advanceSelection(msg.id);
       }
     } catch (e) {
       toast.error(e.message);
@@ -199,7 +211,7 @@ export default function App() {
     try {
       await archiveMut.mutateAsync({ id: m.id });
       toast.info('Naar archief', 'Gearchiveerd', { action: undoAction([m.id]) });
-      if (selectedMessageId === m.id) setSelectedMessageId(null);
+      if (selectedMessageId === m.id) advanceSelection(m.id);
     } catch (e) {
       toast.error(e.message);
     }
@@ -247,16 +259,42 @@ export default function App() {
 
   const qc = useQueryClient();
   const onBlock = async (m) => {
-    if (!m.contact_email) return;
-    const domain = m.contact_email.split('@')[1];
-    const useDomain = domain && confirm(`Blokkeer alleen ${m.contact_email}?\n\nOK = alleen dit adres\nAnnuleren = hele @${domain} domein`);
-    const pattern = useDomain ? m.contact_email : (domain ? '@' + domain : m.contact_email);
+    const channelType = m.channel_type;
     try {
-      await api.post('/settings/sender-rules', { email_pattern: pattern, rule: 'block' });
-      toast.success(`${pattern} geblokkeerd — je ziet nooit meer berichten van dit ${useDomain ? 'adres' : 'domein'}`, 'Geblokkeerd');
+      if (channelType === 'email' && m.contact_email) {
+        const domain = m.contact_email.split('@')[1];
+        const useExact = confirm(`Blokkeer alleen ${m.contact_email}?\n\nOK = alleen dit adres\nAnnuleren = hele @${domain} domein`);
+        const pattern = useExact ? m.contact_email : (domain ? '@' + domain : m.contact_email);
+        const reportSpam = confirm('Ook als spam melden bij Gmail?\n\nOK = naar SPAM-folder in Gmail én lokaal blokkeren\nAnnuleren = alleen lokaal blokkeren');
+        if (reportSpam) {
+          await api.post(`/messages/${m.id}/report-spam`, { email_pattern: pattern });
+          toast.success(`${pattern} gemeld als spam bij Gmail + geblokkeerd`, 'Spam gemeld');
+        } else {
+          await api.post('/settings/sender-rules', { email_pattern: pattern, rule: 'block' });
+          toast.success(`${pattern} geblokkeerd — je ziet nooit meer berichten van dit ${useExact ? 'adres' : 'domein'}`, 'Geblokkeerd');
+        }
+      } else {
+        if (!m.contact_id) {
+          toast.warning('Kan deze afzender niet blokkeren (geen contact gekoppeld)');
+          return;
+        }
+        const name = m.contact_name || 'deze afzender';
+        const ok = confirm(`Alle open berichten van ${name} archiveren en toekomstige berichten verbergen?`);
+        if (!ok) return;
+
+        const contactMsgs = await api.get(`/contacts/${m.contact_id}/messages?status=open`);
+        const openIds = (contactMsgs.messages || []).map((msg) => msg.id);
+        if (openIds.length) {
+          await api.post('/messages/bulk/archive', { ids: openIds });
+        }
+        if (m.contact_email) {
+          await api.post('/settings/sender-rules', { email_pattern: m.contact_email, rule: 'block' });
+        }
+        toast.success(`${name} geblokkeerd — ${openIds.length} bericht${openIds.length === 1 ? '' : 'en'} gearchiveerd`, 'Geblokkeerd');
+      }
       qc.invalidateQueries({ queryKey: ['messages'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      if (selectedMessageId === m.id) setSelectedMessageId(null);
+      if (selectedMessageId === m.id) advanceSelection(m.id);
     } catch (e) { toast.error(e.message); }
   };
 
@@ -332,6 +370,18 @@ export default function App() {
         handleFastDone({ id: selectedMessageId });
         return true;
       },
+      e: () => {
+        // Archiveer het geopende bericht
+        if (!selectedMessageId) return false;
+        onArchive({ id: selectedMessageId });
+        return true;
+      },
+      s: () => {
+        // Open snooze-modal voor het geopende bericht
+        if (!selectedMessageId) return false;
+        handleSnooze({ id: selectedMessageId });
+        return true;
+      },
     };
     for (const item of NAV_ITEMS) {
       if (item.shortcut) {
@@ -395,6 +445,7 @@ export default function App() {
             onBulkArchive={onBulkArchive}
             onBulkBlock={onBulkBlock}
             selectedId={selectedMessageId}
+            onMessagesChange={handleMessagesChange}
           />
         );
       case 'snoozed':

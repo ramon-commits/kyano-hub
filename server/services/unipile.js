@@ -138,19 +138,19 @@ export async function markChatAsRead(chatId) {
         headers: a.headers,
         body: a.body,
       });
-      if (r.ok) return { ok: true, via: a.label };
+      console.log(`[MARK-READ] chat=${chatId} ${a.label}: status=${r.status} ok=${r.ok}`);
+      if (r.ok) return { ok: true, via: a.label, status: r.status };
       // Definitieve fout (auth/permissions) → stop met retries, het fixt zich niet door een ander endpoint
       if (r.status === 401 || r.status === 403) {
-        console.log(`Unipile mark-as-read ${r.status} voor chat ${chatId} (${a.label})`);
         return { ok: false, status: r.status, via: a.label };
       }
       // 404/405/422 etc → probeer de volgende shape
     } catch (e) {
-      console.log(`Unipile mark-as-read fetch fail (${chatId}, ${a.label}): ${e.message}`);
+      console.log(`[MARK-READ] chat=${chatId} ${a.label}: fetch fail ${e.message}`);
     }
   }
 
-  console.log(`Unipile mark-as-read: geen van de ${attempts.length} endpoint-varianten werkte voor chat ${chatId}`);
+  console.log(`[MARK-READ] chat=${chatId}: geen endpoint werkte (${attempts.length} varianten geprobeerd)`);
   return { ok: false, reason: 'no_endpoint_worked' };
 }
 

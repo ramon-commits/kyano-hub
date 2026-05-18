@@ -4,7 +4,7 @@ import { google } from 'googleapis';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
 import { sendReply, sendNew } from '../services/gmail-send.js';
-import { markAsReadInGmail } from '../services/gmail-labels.js';
+import { markAsReadInGmail, markAsSpamInGmail } from '../services/gmail-labels.js';
 import { getClient } from '../services/gmail-oauth.js';
 import { matchContact } from '../services/contact-matcher.js';
 import * as unipile from '../services/unipile.js';
@@ -225,6 +225,54 @@ router.post('/:id/mark-read', (req, res) => {
   if (!msg) return res.status(404).json({ error: 'Message not found' });
   markExternalRead(req.params.id);
   res.json({ ok: true });
+});
+
+// POST /api/messages/:id/report-spam — markeer email als spam bij Gmail + lokaal archiveren + blokkeren
+router.post('/:id/report-spam', async (req, res) => {
+  const msg = db.prepare(`
+    SELECT m.id, m.external_id, m.channel_id, m.contact_id, m.thread_id,
+           ch.type AS channel_type
+    FROM messages m
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    WHERE m.id = ?
+  `).get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+  if (msg.channel_type !== 'email') {
+    return res.status(400).json({ error: 'Spam melden alleen voor email' });
+  }
+
+  let gmailOk = false;
+  if (msg.external_id && msg.channel_id) {
+    const r = await markAsSpamInGmail(msg.channel_id, msg.external_id);
+    gmailOk = !!r?.ok;
+  }
+
+  // Archiveer alle open berichten in de thread lokaal
+  const threadIds = openIdsInThread(req.params.id);
+  const archiveStmt = db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id = ? AND status = 'open'`);
+  let archived = 0;
+  const tx = db.transaction(() => {
+    for (const id of threadIds) archived += archiveStmt.run(id).changes;
+  });
+  tx();
+  for (const id of threadIds) logInteraction(id, 'archived', 'Gemeld als spam');
+
+  // Auto-blokkeer: gebruik patroon uit body of contact email
+  let pattern = (req.body?.email_pattern || '').toString().trim();
+  if (!pattern && msg.contact_id) {
+    const c = db.prepare('SELECT email FROM contacts WHERE id = ?').get(msg.contact_id);
+    if (c?.email) pattern = c.email;
+  }
+  if (pattern) {
+    const lower = pattern.toLowerCase();
+    const existing = db.prepare(`SELECT id FROM sender_rules WHERE lower(email_pattern) = ? AND rule = 'block'`).get(lower);
+    if (!existing) {
+      db.prepare(`INSERT INTO sender_rules (id, email_pattern, rule) VALUES (?, ?, 'block')`)
+        .run(uuid(), lower);
+    }
+  }
+
+  res.json({ ok: true, gmail_ok: gmailOk, archived, blocked_pattern: pattern || null });
 });
 
 // GET /api/messages/:id/thread-summary — basale samenvatting (zonder AI)

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMessages, usePinnedMessages, useSyncAll } from '../../hooks/useMessages.js';
 import { useStats } from '../../hooks/useStats.js';
 import { useToast } from '../../hooks/useToast.jsx';
@@ -34,11 +34,12 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId, onMessagesChange }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(50);
 
-  const params = { status: 'open' };
+  const params = { status: 'open', limit };
   if (channelFilter !== 'all') params.channel_type = channelFilter;
   if (search) params.search = search;
 
@@ -48,7 +49,13 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
   const syncAll = useSyncAll();
   const toast = useToast();
 
+  // Reset paginatie wanneer filter of zoekterm verandert
+  useEffect(() => { setLimit(50); }, [channelFilter, search]);
+
+
   const allMessages = data?.messages || [];
+  const totalMessages = data?.total || 0;
+  const hasMore = allMessages.length < totalMessages;
   const pinned = pinnedData?.messages || [];
 
   // Filter pinned thread_ids out of the regular list to avoid duplicate rows
@@ -57,6 +64,12 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
     () => allMessages.filter((m) => !m.thread_id || !pinnedThreadIds.has(m.thread_id)),
     [allMessages, pinnedThreadIds],
   );
+
+  // Geef App de volgorde van de inbox door zodat keyboard-acties auto-advancen naar het volgende bericht
+  useEffect(() => {
+    if (!onMessagesChange) return;
+    onMessagesChange([...pinned.map((m) => m.id), ...messages.map((m) => m.id)]);
+  }, [pinned, messages, onMessagesChange]);
 
   const selection = useSelection(messages);
   useSelectionShortcuts({
@@ -195,6 +208,17 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
                       onToggleSelect={selection.toggle}
                     />
                   ))}
+                  {hasMore ? (
+                    <div className="border-t border-gray-100 bg-gray-50/40 px-5 py-3 text-center">
+                      <button
+                        onClick={() => setLimit((l) => l + 50)}
+                        className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:shadow"
+                      >
+                        <i className="fa-solid fa-chevron-down" />
+                        Laad meer ({allMessages.length} van {totalMessages})
+                      </button>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
