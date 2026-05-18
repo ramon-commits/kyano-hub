@@ -15,14 +15,9 @@ function notifyDesktop({ title, body, icon, url, tag }) {
   } catch { /* no-op */ }
 }
 
-// Throttle invalidate: voorkomt re-render storm wanneer SSE event-bursts binnenkomen.
-// Notifications zelf blijven wel per bericht (max 3) komen.
-const INVALIDATE_THROTTLE_MS = 10_000;
-
 export function useNotifications({ enabled = true } = {}) {
   const qc = useQueryClient();
   const sseRef = useRef(null);
-  const lastInvalidateRef = useRef(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -44,15 +39,10 @@ export function useNotifications({ enabled = true } = {}) {
     es.addEventListener('new-messages', (e) => {
       try {
         const payload = JSON.parse(e.data);
-        // Throttle: max 1 invalidate per 10s om re-render storm te voorkomen
-        const now = Date.now();
-        if (now - lastInvalidateRef.current > INVALIDATE_THROTTLE_MS) {
-          lastInvalidateRef.current = now;
-          qc.invalidateQueries({ queryKey: ['messages'] });
-          qc.invalidateQueries({ queryKey: ['stats'] });
-          qc.invalidateQueries({ queryKey: ['daily-summary'] });
-        }
-        // Notification per recent inbox bericht (max 3 om spam te voorkomen)
+        // TIJDELIJK UITGESCHAKELD — invalidate veroorzaakte re-render loop
+        // Gebruik de "Nieuwe check" knop in de inbox voor handmatige refresh.
+        console.log('[SSE] new-messages event ontvangen, skip invalidation (handmatig refreshen via Nieuwe check)', payload?.messages?.length || 0, 'nieuw');
+        // Notification per recent inbox bericht (max 3 om spam te voorkomen) — blijft wel werken
         for (const m of (payload.messages || []).slice(0, 3)) {
           notifyDesktop({
             title: m.contact_name || m.channel_label || 'Nieuw bericht',

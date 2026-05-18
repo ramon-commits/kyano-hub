@@ -9,8 +9,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false, // DISABLE — veroorzaakt flicker bij tab-switch
       retry: 2,
+      placeholderData: (prev) => prev, // keep previous data — geen flicker tijdens refetch
     },
   },
 });
