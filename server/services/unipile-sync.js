@@ -332,12 +332,15 @@ function persistUnipileMessage(channel, chat, msg, attendeeMap) {
     }
   }
 
-  // Auto-done: outbound bericht binnen → markeer ALLE open inbound in dezelfde thread als beantwoord
+  // Auto-done: outbound bericht binnen → markeer alleen ÉÉRDERE open inbound in deze thread als beantwoord.
+  // Unipile retourneert berichten descending (nieuwste eerst), dus zonder timestamp-filter zou een outbound
+  // óók nieuwere inbound auto-doneén die net daarvoor in dezelfde sync-batch zijn ingelezen.
   if (out && chat.id) {
     const openInboundRows = db.prepare(`
       SELECT id, contact_id FROM messages
       WHERE thread_id = ? AND direction = 'inbound' AND status = 'open' AND id != ?
-    `).all(chat.id, id);
+        AND received_at < ?
+    `).all(chat.id, id, receivedAt);
 
     if (openInboundRows.length) {
       const noteText = `Beantwoord via ${channelType === 'whatsapp' ? 'WhatsApp' : channelType}`;
@@ -356,7 +359,7 @@ function persistUnipileMessage(channel, chat, msg, attendeeMap) {
         try { logIns.run(uuid(), row.id, row.contact_id, channelType, noteText); }
         catch (e) { console.error('auto-done log fail:', e.message); }
       }
-      console.log(`✅ Auto-done: ${openInboundRows.length} bericht(en) in thread ${chat.id} gemarkeerd als beantwoord (${noteText})`);
+      console.log(`✅ Auto-done: ${openInboundRows.length} bericht(en) ouder dan ${receivedAt} in thread ${chat.id} (${noteText})`);
     }
   }
 
