@@ -154,6 +154,37 @@ export async function markChatAsRead(chatId) {
   return { ok: false, reason: 'no_endpoint_worked' };
 }
 
+// ===== Archive/mute chat =====
+// Best-effort: probeer eerst archive, dan mute. Beide via PATCH op de chat-resource.
+export async function archiveChat(chatId) {
+  if (!chatId || !isConfigured()) return { ok: false, reason: 'not_configured_or_no_chat' };
+  const { apiKey } = getUnipileCreds();
+  const headers = { 'X-API-KEY': apiKey, 'Accept': 'application/json', 'Content-Type': 'application/json' };
+  const encoded = encodeURIComponent(chatId);
+  const url = new URL(baseUrl() + `/api/v1/chats/${encoded}`);
+
+  const attempts = [
+    { label: 'PATCH is_archived', body: { is_archived: true } },
+    { label: 'PATCH archived', body: { archived: true } },
+    { label: 'PATCH is_muted', body: { is_muted: true } },
+    { label: 'PATCH muted', body: { muted: true } },
+  ];
+
+  for (const a of attempts) {
+    try {
+      const r = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify(a.body) });
+      console.log(`[ARCHIVE-CHAT] chat=${chatId} ${a.label}: status=${r.status} ok=${r.ok}`);
+      if (r.ok) return { ok: true, via: a.label };
+      if (r.status === 401 || r.status === 403) return { ok: false, status: r.status, via: a.label };
+    } catch (e) {
+      console.log(`[ARCHIVE-CHAT] chat=${chatId} ${a.label}: fetch fail ${e.message}`);
+    }
+  }
+
+  console.log(`[ARCHIVE-CHAT] chat=${chatId}: geen endpoint werkte`);
+  return { ok: false, reason: 'no_endpoint_worked' };
+}
+
 // ===== Verstuur in bestaande chat =====
 export async function sendMessage(chatId, text) {
   return await callUnipile('POST', `/api/v1/chats/${chatId}/messages`, {
@@ -202,6 +233,33 @@ export async function startNewChat(accountId, attendeeId, text) {
   return await callUnipile('POST', '/api/v1/chats', {
     body: { account_id: accountId, text, attendees_ids: [attendeeId] },
   });
+}
+
+// ===== Download attachment binary (WhatsApp/LinkedIn/Instagram media) =====
+// Unipile geeft geen directe URLs maar serveert media via een download-endpoint.
+// Probeert verschillende endpoint-varianten; geeft { buffer, mimeType } terug bij succes.
+export async function getMessageAttachmentBinary(messageExternalId, attachmentId) {
+  if (!messageExternalId || !attachmentId || !isConfigured()) return null;
+  const { apiKey } = getUnipileCreds();
+  const headers = { 'X-API-KEY': apiKey, 'Accept': '*/*' };
+
+  const paths = [
+    `/api/v1/messages/${encodeURIComponent(messageExternalId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    `/api/v1/messages/${encodeURIComponent(messageExternalId)}/attachment/${encodeURIComponent(attachmentId)}`,
+    `/api/v1/attachments/${encodeURIComponent(attachmentId)}?message_id=${encodeURIComponent(messageExternalId)}`,
+  ];
+
+  for (const path of paths) {
+    try {
+      const url = new URL(baseUrl() + path);
+      const r = await fetch(url, { headers });
+      if (!r.ok) continue;
+      const mimeType = r.headers.get('content-type') || 'application/octet-stream';
+      const buf = Buffer.from(await r.arrayBuffer());
+      return { buffer: buf, mimeType };
+    } catch { /* probeer volgende */ }
+  }
+  return null;
 }
 
 // ===== User profile =====

@@ -4,7 +4,7 @@ import { google } from 'googleapis';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
 import { sendReply, sendNew } from '../services/gmail-send.js';
-import { markAsReadInGmail, markAsSpamInGmail } from '../services/gmail-labels.js';
+import { markAsReadInGmail, markAsSpamInGmail, archiveInGmail } from '../services/gmail-labels.js';
 import { getClient } from '../services/gmail-oauth.js';
 import { matchContact } from '../services/contact-matcher.js';
 import * as unipile from '../services/unipile.js';
@@ -362,38 +362,46 @@ router.get('/:id/attachment/:attachmentId', async (req, res) => {
   if (!msg) return res.status(404).json({ error: 'Message not found' });
 
   const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(msg.channel_id);
-  if (!channel || channel.type !== 'email') {
-    return res.status(400).json({ error: 'Bijlage-download alleen voor email-kanalen' });
-  }
-  if (!msg.external_id) {
-    return res.status(400).json({ error: 'Bericht heeft geen Gmail external_id' });
-  }
+  if (!channel) return res.status(400).json({ error: 'Bericht heeft geen kanaal' });
+  if (!msg.external_id) return res.status(400).json({ error: 'Bericht heeft geen external_id' });
+
+  // Lees metadata uit attachments_json voor mime + filename (gedeeld door beide paden)
+  let meta = null;
+  try {
+    const list = msg.attachments_json ? JSON.parse(msg.attachments_json) : [];
+    meta = list.find((a) => a.id === req.params.attachmentId) || null;
+  } catch { /* ignore */ }
 
   try {
-    const client = getClient(msg.channel_id);
-    if (!client) return res.status(400).json({ error: 'Email-kanaal niet verbonden' });
+    let buffer = null;
+    let mimeType = null;
+    let filename = (meta?.filename || meta?.file_name || 'attachment').replace(/[\r\n"]/g, '_');
 
-    const gmail = google.gmail({ version: 'v1', auth: client });
-    const { data } = await gmail.users.messages.attachments.get({
-      userId: 'me',
-      messageId: msg.external_id,
-      id: req.params.attachmentId,
-    });
-    if (!data?.data) return res.status(404).json({ error: 'Bijlage niet gevonden bij Gmail' });
+    if (channel.type === 'email') {
+      const client = getClient(msg.channel_id);
+      if (!client) return res.status(400).json({ error: 'Email-kanaal niet verbonden' });
 
-    const buffer = Buffer.from(data.data, 'base64url');
+      const gmail = google.gmail({ version: 'v1', auth: client });
+      const { data } = await gmail.users.messages.attachments.get({
+        userId: 'me',
+        messageId: msg.external_id,
+        id: req.params.attachmentId,
+      });
+      if (!data?.data) return res.status(404).json({ error: 'Bijlage niet gevonden bij Gmail' });
 
-    // Metadata uit attachments_json voor mime + filename
-    let meta = null;
-    try {
-      const list = msg.attachments_json ? JSON.parse(msg.attachments_json) : [];
-      meta = list.find((a) => a.id === req.params.attachmentId) || null;
-    } catch { /* ignore */ }
+      buffer = Buffer.from(data.data, 'base64url');
+      mimeType = meta?.mimeType || meta?.mime || 'application/octet-stream';
+    } else if (['whatsapp', 'instagram', 'linkedin'].includes(channel.type)) {
+      // Unipile: download de media binary via aparte endpoint
+      const result = await unipile.getMessageAttachmentBinary(msg.external_id, req.params.attachmentId);
+      if (!result) return res.status(404).json({ error: 'Bijlage niet gevonden bij Unipile' });
+      buffer = result.buffer;
+      mimeType = meta?.mime || meta?.mimeType || result.mimeType || 'application/octet-stream';
+    } else {
+      return res.status(400).json({ error: `Bijlages niet ondersteund voor kanaal-type ${channel.type}` });
+    }
 
-    const mimeType = meta?.mimeType || 'application/octet-stream';
-    const filename = (meta?.filename || 'attachment').replace(/[\r\n"]/g, '_');
     res.setHeader('Content-Type', mimeType);
-    // inline zodat <img src=…> en preview werken; download via browser-save
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(buffer);
@@ -991,7 +999,7 @@ router.post('/bulk/archive', (req, res) => {
   });
   const updated = tx();
   logInteractionsBulk(expanded, 'archived');
-  markExternalReadBulk(expanded);
+  markExternalReadBulk(expanded, true);
   res.json({ ok: true, updated, archived: updated });
 });
 
@@ -1037,13 +1045,14 @@ router.delete('/:id', (req, res) => {
     if (fb.changes === 0) return res.status(404).json({ error: 'Message not found' });
   }
   for (const id of ids) logInteraction(id, 'archived');
-  markExternalReadBulk(ids);
+  markExternalReadBulk(ids, true);
   res.json({ ok: true, id: req.params.id, status: 'archived', thread_updated: changed });
 });
 
-// Best-effort mark-as-read in het externe kanaal (Gmail of Unipile).
-// `seen` is een Set om dubbele Unipile-calls per thread te voorkomen.
-function markExternalRead(messageId, seen = new Set()) {
+// Best-effort sync naar het externe kanaal (Gmail of Unipile).
+// `seen` voorkomt dubbele Unipile-calls per thread.
+// `shouldArchive=true` verwijdert het bericht óók uit Gmail INBOX / dempt de WA-chat.
+function markExternalRead(messageId, seen = new Set(), shouldArchive = false) {
   const row = db.prepare(`
     SELECT m.external_id, m.channel_id, m.thread_id, ch.type
     FROM messages m
@@ -1052,7 +1061,10 @@ function markExternalRead(messageId, seen = new Set()) {
   `).get(messageId);
   if (!row) return;
   if (row.type === 'email') {
-    if (row.external_id) markAsReadInGmail(row.channel_id, row.external_id);
+    if (row.external_id) {
+      if (shouldArchive) archiveInGmail(row.channel_id, row.external_id);
+      else markAsReadInGmail(row.channel_id, row.external_id);
+    }
     return;
   }
   if ((row.type === 'whatsapp' || row.type === 'instagram' || row.type === 'linkedin') && row.thread_id) {
@@ -1060,12 +1072,15 @@ function markExternalRead(messageId, seen = new Set()) {
     if (seen.has(key)) return;
     seen.add(key);
     unipile.markChatAsRead(row.thread_id).catch(() => { /* best-effort */ });
+    if (shouldArchive) {
+      unipile.archiveChat(row.thread_id).catch(() => { /* best-effort */ });
+    }
   }
 }
 
-function markExternalReadBulk(messageIds) {
+function markExternalReadBulk(messageIds, shouldArchive = false) {
   const seen = new Set();
-  for (const id of messageIds) markExternalRead(id, seen);
+  for (const id of messageIds) markExternalRead(id, seen, shouldArchive);
 }
 
 // Geef alle OPEN message-ids in dezelfde thread terug (inclusief het opgegeven id).

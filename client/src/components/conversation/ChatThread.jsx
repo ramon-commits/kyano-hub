@@ -120,7 +120,7 @@ export default function ChatThread({ message, threadMessages }) {
                         : undefined
                     }
                   >
-                    <MediaContent attachments={m.attachments_json} />
+                    <MediaContent attachments={m.attachments_json} messageId={m.id} />
                     {(m.body_text || stripSenderPrefix(m.snippet)) ? (
                       <div className="whitespace-pre-wrap break-words px-1 text-[14px] leading-snug">
                         {linkifyText(m.body_text || stripSenderPrefix(m.snippet))}
@@ -158,19 +158,23 @@ function parseAttachments(input) {
 }
 
 function formatBytes(n) {
+  // Unipile stuurt soms size als { width, height } voor media — alleen bytes formatten
   if (!n || typeof n !== 'number') return '';
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function MediaContent({ attachments }) {
+function MediaContent({ attachments, messageId }) {
   const items = parseAttachments(attachments);
   if (!items.length) return null;
   return (
     <div className="mb-1 space-y-1">
       {items.map((att, i) => {
-        const url = att.url || att.download_url || null;
+        // Unipile geeft url=null; val terug op onze proxy-route die de binary via Unipile haalt
+        const url = att.url
+          || att.download_url
+          || (messageId && att.id ? `/api/messages/${encodeURIComponent(messageId)}/attachment/${encodeURIComponent(att.id)}` : null);
         const mime = att.mime || att.mime_type || att.type || '';
         const filename = att.filename || att.file_name || att.name || null;
         const kind = att.kind
