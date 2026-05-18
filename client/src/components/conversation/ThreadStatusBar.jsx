@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function ThreadStatusBar({ onSnooze, onDone, onSchedule, onUrgent, onArchive, onFollowUp, showFollowUp, currentPriority }) {
+export default function ThreadStatusBar({ onSnooze, onDone, onSchedule, onUrgent, onArchive, onForward, onFollowUp, showFollowUp, currentPriority }) {
   const isUrgent = currentPriority === 'high';
   const [followUpLoading, setFollowUpLoading] = useState(false);
 
@@ -49,6 +49,11 @@ export default function ThreadStatusBar({ onSnooze, onDone, onSchedule, onUrgent
       >
         <i className="fa-solid fa-circle text-red-500 mr-1.5" />{isUrgent ? 'Urgent' : 'Markeer urgent'}
       </Btn>
+      {onForward ? (
+        <Btn onClick={onForward} hover="hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200" title="Doorsturen (w)">
+          <i className="fa-solid fa-share mr-1.5" />Doorsturen
+        </Btn>
+      ) : null}
       <Btn onClick={onArchive} hover="hover:bg-gray-100 hover:text-gray-900 hover:border-gray-300">
         <i className="fa-solid fa-box-archive mr-1.5" />Archiveer
       </Btn>

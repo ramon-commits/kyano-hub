@@ -18,6 +18,7 @@ import WelcomeScreen from './components/welcome/WelcomeScreen.jsx';
 import SnoozeModal from './components/modals/SnoozeModal.jsx';
 import DoneModal from './components/modals/DoneModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
+import ForwardModal from './components/modals/ForwardModal.jsx';
 import CommandPalette from './components/shared/CommandPalette.jsx';
 import { useHealth } from './hooks/useStats.js';
 import { useArchiveMessage, useBulkArchive, useBulkDone, useBulkReopen, useBulkSnooze, useDoneMessage, usePinMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useUnpinMessage, useWaitingMessage } from './hooks/useMessages.js';
@@ -64,6 +65,7 @@ export default function App() {
   const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null, bulkIds: null });
   const [doneModal, setDoneModal] = useState({ open: false, message: null, bulkIds: null });
   const [scheduleModal, setScheduleModal] = useState({ open: false, contact: null, message: null });
+  const [forwardModal, setForwardModal] = useState({ open: false, message: null });
   const [cmdkOpen, setCmdkOpen] = useState(false);
 
   const toast = useToast();
@@ -136,6 +138,14 @@ export default function App() {
     // target kan een message of contact zijn
     const isContact = target && !('channel_id' in target);
     setScheduleModal({ open: true, contact: isContact ? target : null, message: isContact ? null : target });
+  };
+
+  const handleForward = (m) => {
+    if (!m || m.channel_type !== 'email') {
+      toast.info('Doorsturen is alleen beschikbaar voor email');
+      return;
+    }
+    setForwardModal({ open: true, message: m });
   };
 
   const onSnooze = async (snoozedUntilISO, label) => {
@@ -339,7 +349,7 @@ export default function App() {
     const map = {
       Escape: () => {
         if (cmdkOpen) return false; // CommandPalette handles its own Escape
-        if (snoozeModal.open || doneModal.open || scheduleModal.open) return false;
+        if (snoozeModal.open || doneModal.open || scheduleModal.open || forwardModal.open) return false;
         if (selectedMessageId) { setSelectedMessageId(null); return true; }
         if (selectedContactId) { setSelectedContactId(null); return true; }
         return false;
@@ -382,6 +392,14 @@ export default function App() {
         handleSnooze({ id: selectedMessageId });
         return true;
       },
+      w: () => {
+        // Doorsturen — alleen voor email (channel-check gebeurt in handleForward)
+        if (!selectedMessageId) return false;
+        const cached = qc.getQueryData(['message', selectedMessageId]);
+        if (!cached) return false;
+        handleForward(cached);
+        return true;
+      },
     };
     for (const item of NAV_ITEMS) {
       if (item.shortcut) {
@@ -389,7 +407,7 @@ export default function App() {
       }
     }
     return map;
-  }, [cmdkOpen, snoozeModal.open, doneModal.open, scheduleModal.open, selectedMessageId, selectedContactId]);
+  }, [cmdkOpen, snoozeModal.open, doneModal.open, scheduleModal.open, forwardModal.open, selectedMessageId, selectedContactId]);
 
   useKeyboard(shortcutMap);
 
@@ -416,6 +434,7 @@ export default function App() {
           onSchedule={handleSchedule}
           onUrgent={onUrgent}
           onArchive={onArchive}
+          onForward={handleForward}
           onAI={onAIPlaceholder}
           onImproveNL={onImproveNL}
           onTranslate={onTranslate}
@@ -554,6 +573,12 @@ export default function App() {
         onClose={() => setScheduleModal({ open: false, contact: null, message: null })}
         contactName={scheduleModal.contact?.name || scheduleModal.message?.contact_name}
         contactEmail={scheduleModal.contact?.email || scheduleModal.message?.contact_email}
+      />
+
+      <ForwardModal
+        open={forwardModal.open}
+        onClose={() => setForwardModal({ open: false, message: null })}
+        message={forwardModal.message}
       />
 
       <CommandPalette

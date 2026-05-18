@@ -20,6 +20,7 @@ export default function ConversationView({
   onSchedule,
   onUrgent,
   onArchive,
+  onForward,
   onAI,
   onImproveNL,
   onTranslate,
@@ -231,6 +232,7 @@ export default function ConversationView({
           onSchedule={() => onSchedule?.(m)}
           onUrgent={() => onUrgent?.(m)}
           onArchive={() => onArchive?.(m)}
+          onForward={isEmail && onForward ? () => onForward(m) : null}
           onFollowUp={handleFollowUpFromStatus}
           showFollowUp={showFollowUp}
           currentPriority={m.priority}

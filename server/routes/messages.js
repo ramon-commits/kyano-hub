@@ -686,6 +686,114 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
   }
 });
 
+// POST /api/messages/:id/forward — stuur een email door
+router.post('/:id/forward', async (req, res, next) => {
+  try {
+    const original = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
+    if (!original) return res.status(404).json({ error: 'Message not found' });
+    if (original.channel_type !== 'email') {
+      return res.status(400).json({ error: 'Doorsturen is alleen beschikbaar voor email' });
+    }
+
+    const { to, cc, bcc, extra_text } = req.body || {};
+    if (!to || typeof to !== 'string' || !to.trim()) {
+      return res.status(400).json({ error: 'Aan-veld (to) is verplicht' });
+    }
+
+    const subject = (original.subject || '').replace(/^(Fwd?:\s*)+/i, '');
+    const forwardSubject = `Fwd: ${subject || '(geen onderwerp)'}`;
+
+    // Bouw quote: tekst + HTML versie
+    const senderLine = original.contact_name && original.contact_email
+      ? `${original.contact_name} <${original.contact_email}>`
+      : (original.contact_email || original.contact_name || 'onbekend');
+    const dateStr = original.received_at || '';
+    const origText = original.body_text || (original.snippet || '');
+    const origHtml = original.body_html || `<div>${escapeHtmlForForward(origText)}</div>`;
+
+    const extra = (extra_text || '').toString();
+    const headerLines = [
+      '---------- Forwarded message ---------',
+      `Van: ${senderLine}`,
+      `Datum: ${dateStr}`,
+      `Onderwerp: ${original.subject || '(geen onderwerp)'}`,
+      `Aan: ${original.channel_account || ''}`,
+      '',
+    ];
+
+    const bodyText = [
+      extra,
+      extra ? '' : null,
+      ...headerLines,
+      origText,
+    ].filter((x) => x !== null).join('\n');
+
+    const bodyHtml = `
+      ${extra ? `<div>${escapeHtmlForForward(extra).replace(/\n/g, '<br>')}</div><br>` : ''}
+      <div style="color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin-bottom:12px">
+        <div><strong>---------- Forwarded message ---------</strong></div>
+        <div><strong>Van:</strong> ${escapeHtmlForForward(senderLine)}</div>
+        <div><strong>Datum:</strong> ${escapeHtmlForForward(dateStr)}</div>
+        <div><strong>Onderwerp:</strong> ${escapeHtmlForForward(original.subject || '(geen onderwerp)')}</div>
+        <div><strong>Aan:</strong> ${escapeHtmlForForward(original.channel_account || '')}</div>
+      </div>
+      <blockquote style="margin:0;padding-left:12px;border-left:3px solid #d1d5db;color:#374151">
+        ${origHtml}
+      </blockquote>
+    `.trim();
+
+    const result = await sendNew(original.channel_id, {
+      to: to.trim(),
+      cc: cc || null,
+      bcc: bcc || null,
+      subject: forwardSubject,
+      bodyHtml,
+      bodyText,
+    });
+
+    // Lokaal opslaan als outbound
+    const localId = uuid();
+    db.prepare(`
+      INSERT OR IGNORE INTO messages (
+        id, external_id, channel_id, contact_id, direction, subject, snippet,
+        body_html, body_text, thread_id, status, priority, received_at
+      ) VALUES (
+        @id, @external_id, @channel_id, @contact_id, 'outbound', @subject, @snippet,
+        @body_html, @body_text, @thread_id, 'archived', 'medium', @received_at
+      )
+    `).run({
+      id: localId,
+      external_id: result.messageId,
+      channel_id: original.channel_id,
+      contact_id: null,
+      subject: forwardSubject,
+      snippet: (extra || origText).trim().slice(0, 200),
+      body_html: bodyHtml,
+      body_text: bodyText,
+      thread_id: result.threadId || null,
+      received_at: new Date().toISOString(),
+    });
+
+    logInteraction(req.params.id, 'replied', `Doorgestuurd naar ${to}`, 'sent');
+
+    res.json({
+      ok: true,
+      message_id: localId,
+      gmail_message_id: result.messageId,
+      from: result.fromEmail,
+      to: to.trim(),
+      original_id: req.params.id,
+    });
+  } catch (e) { next(e); }
+});
+
+function escapeHtmlForForward(s) {
+  return (s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // POST /api/messages/compose — nieuw bericht (geen reply)
 router.post('/compose', async (req, res, next) => {
   try {
