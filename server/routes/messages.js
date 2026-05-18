@@ -70,9 +70,12 @@ router.get('/', (req, res) => {
 
     // Stap 1 — vind voor elke thread de id van het laatste OPEN bericht (matched ook contact/channel filters)
     // We tellen tegelijk hoeveel open berichten er in die thread zitten.
+    // De outer SELECT moet ORDER BY received_at DESC hebben — anders komt rows in SQLite-storage-order
+    // (effectief UUID) terug en kan een latere `.slice(0,50)` complete kanalen overslaan op pagina 1.
     const latestSql = `
       SELECT
         m.id AS latest_id,
+        m.received_at AS latest_received_at,
         COALESCE(m.thread_id, m.id) AS thread_key,
         COUNT(*) OVER (PARTITION BY COALESCE(m.thread_id, m.id)) AS thread_open_count,
         ROW_NUMBER() OVER (
@@ -88,13 +91,11 @@ router.get('/', (req, res) => {
       SELECT latest_id, thread_key, thread_open_count
       FROM (${latestSql})
       WHERE rn = 1
+      ORDER BY latest_received_at DESC
     `).all(params);
 
     const total = latestRows.length;
-    const pageRowsMeta = latestRows
-      .slice() // safe copy
-      .sort(() => 0) // keep order from SQL (latest first); will sort by received below
-      .slice(offset, offset + limit);
+    const pageRowsMeta = latestRows.slice(offset, offset + limit);
 
     if (pageRowsMeta.length === 0) {
       return res.json({ messages: [], total, limit, offset });

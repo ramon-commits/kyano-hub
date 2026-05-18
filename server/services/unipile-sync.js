@@ -379,14 +379,28 @@ export async function syncUnipileAccount(channelId, unipileAccountId) {
   let errors = 0;
   let skippedChats = 0;
 
+  // Safety margin: kijk 2 min terug. Een chat die rond de last-sync-tijd updates kreeg moet opnieuw
+  // gecheckt worden, anders mist Unipile's eventual-consistency soms berichten op de grens.
+  const SAFETY_MS = 2 * 60 * 1000;
+  const cutoffMs = lastSyncAt ? lastSyncAt.getTime() - SAFETY_MS : null;
+
   for (const chat of chats) {
-    const chatUpdatedRaw = chat.timestamp || chat.updated_at || chat.last_message_at;
-    if (lastSyncAt && chatUpdatedRaw) {
-      const chatUpdated = new Date(chatUpdatedRaw);
-      if (!isNaN(chatUpdated.getTime()) && chatUpdated <= lastSyncAt) {
-        skippedChats++;
-        continue;
-      }
+    // Pak de MAX van alle beschikbare timestamp-velden — Unipile gebruikt soms verschillende keys
+    const candidates = [chat.timestamp, chat.updated_at, chat.last_message_at, chat.lastMessageAt]
+      .filter(Boolean)
+      .map((v) => new Date(v).getTime())
+      .filter((t) => !isNaN(t));
+    const chatUpdatedMs = candidates.length ? Math.max(...candidates) : null;
+
+    // Skip alleen als we ECHT zeker zijn dat de chat niet veranderd is sinds (lastSync - 2min).
+    // Bij geen timestamp / parse-fail / binnen safety-window: NIET skippen, laat dedup het werk doen.
+    const shouldSkip = cutoffMs != null && chatUpdatedMs != null && chatUpdatedMs <= cutoffMs;
+    if (DEBUG) {
+      console.log(`[UNIPILE-SYNC] ${channelId} chat=${chat.name || chat.id?.slice(0,12)} updated=${chatUpdatedMs ? new Date(chatUpdatedMs).toISOString() : 'null'} skip=${shouldSkip}`);
+    }
+    if (shouldSkip) {
+      skippedChats++;
+      continue;
     }
 
     try {
