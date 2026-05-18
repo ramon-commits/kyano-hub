@@ -132,9 +132,9 @@ export default function AgendaWidget({ onNavigate, onOpenContact }) {
           <div className="px-2 py-2 text-xs text-gray-400">Geen afspraken vandaag</div>
         ) : (
           <>
-            {todayEvents.map((e) => <EventRow key={e.id} event={e} />)}
-            {todayPosts.map((p) => (
-              <SocialPostRow key={`post-${p.id}`} post={p} onNavigate={onNavigate} />
+            {todayEvents.map((e, i) => <EventRow key={`${e.calendar_id || e.channel_id || ''}_${e.id || ''}_${i}`} event={e} />)}
+            {todayPosts.map((p, i) => (
+              <SocialPostRow key={`post-${p.id || ''}_${i}`} post={p} onNavigate={onNavigate} />
             ))}
           </>
         )}
@@ -143,14 +143,14 @@ export default function AgendaWidget({ onNavigate, onOpenContact }) {
       {/* Morgen */}
       {tomorrowEvents.length > 0 ? (
         <Section label="Morgen">
-          {tomorrowEvents.map((e) => <EventRow key={e.id} event={e} />)}
+          {tomorrowEvents.map((e, i) => <EventRow key={`${e.calendar_id || e.channel_id || ''}_${e.id || ''}_${i}`} event={e} />)}
         </Section>
       ) : null}
 
       {/* Komende week */}
       {weekEvents.length > 0 ? (
         <Section label="Komende week">
-          {weekEvents.map((e) => <CompactEventRow key={e.id} event={e} />)}
+          {weekEvents.map((e, i) => <CompactEventRow key={`${e.calendar_id || e.channel_id || ''}_${e.id || ''}_${i}`} event={e} />)}
         </Section>
       ) : null}
 

@@ -15,9 +15,14 @@ function notifyDesktop({ title, body, icon, url, tag }) {
   } catch { /* no-op */ }
 }
 
+// Throttle invalidate: voorkomt re-render storm wanneer SSE event-bursts binnenkomen.
+// Notifications zelf blijven wel per bericht (max 3) komen.
+const INVALIDATE_THROTTLE_MS = 10_000;
+
 export function useNotifications({ enabled = true } = {}) {
   const qc = useQueryClient();
   const sseRef = useRef(null);
+  const lastInvalidateRef = useRef(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -39,10 +44,14 @@ export function useNotifications({ enabled = true } = {}) {
     es.addEventListener('new-messages', (e) => {
       try {
         const payload = JSON.parse(e.data);
-        // Refresh data
-        qc.invalidateQueries({ queryKey: ['messages'] });
-        qc.invalidateQueries({ queryKey: ['stats'] });
-        qc.invalidateQueries({ queryKey: ['daily-summary'] });
+        // Throttle: max 1 invalidate per 10s om re-render storm te voorkomen
+        const now = Date.now();
+        if (now - lastInvalidateRef.current > INVALIDATE_THROTTLE_MS) {
+          lastInvalidateRef.current = now;
+          qc.invalidateQueries({ queryKey: ['messages'] });
+          qc.invalidateQueries({ queryKey: ['stats'] });
+          qc.invalidateQueries({ queryKey: ['daily-summary'] });
+        }
         // Notification per recent inbox bericht (max 3 om spam te voorkomen)
         for (const m of (payload.messages || []).slice(0, 3)) {
           notifyDesktop({

@@ -8,6 +8,11 @@ export function useMessages(params = {}) {
   return useQuery({
     queryKey: ['messages', params],
     queryFn: () => api.get(path),
+    // SSE + poller doen real-time updates — geen focus-refetch nodig.
+    // Voorkomt re-render storm bij tab-switch in combinatie met SSE invalidate.
+    refetchOnWindowFocus: false,
+    staleTime: 30_000,
+    placeholderData: (prev) => prev, // keep previous data tijdens nieuwe fetch (geen flicker)
   });
 }
 
