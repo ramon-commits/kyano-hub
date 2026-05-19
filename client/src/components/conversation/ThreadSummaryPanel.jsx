@@ -82,19 +82,13 @@ export default function ThreadSummaryPanel({ messageId, onClose }) {
               ) : null}
             </Section>
 
-            {/* AI placeholder (stap 11) */}
-            <Section label="AI samenvatting">
-              <div className="rounded-lg border border-dashed border-purple-200 bg-purple-50/60 p-3">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-purple-800">
-                  <i className="fa-solid fa-wand-magic-sparkles" />
-                  Komt eraan
+            {data.ai_summary ? (
+              <Section label="AI samenvatting">
+                <div className="whitespace-pre-line rounded-lg border border-purple-100 bg-purple-50/60 p-3 text-[12px] leading-relaxed text-purple-900">
+                  {data.ai_summary}
                 </div>
-                <p className="mt-1 text-[11px] leading-relaxed text-purple-700">
-                  Thread-analyse met samenvatting in 2-3 zinnen, statusitems en openstaande
-                  acties wordt gebouwd in stap 11 (AI integratie).
-                </p>
-              </div>
-            </Section>
+              </Section>
+            ) : null}
           </>
         )}
       </div>

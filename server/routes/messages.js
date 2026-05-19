@@ -277,7 +277,7 @@ router.post('/:id/report-spam', async (req, res) => {
 });
 
 // GET /api/messages/:id/thread-summary — basale samenvatting (zonder AI)
-router.get('/:id/thread-summary', (req, res) => {
+router.get('/:id/thread-summary', async (req, res) => {
   const msg = db.prepare('SELECT id, thread_id FROM messages WHERE id = ?').get(req.params.id);
   if (!msg) return res.status(404).json({ error: 'Message not found' });
 
@@ -334,6 +334,87 @@ router.get('/:id/thread-summary', (req, res) => {
   const lastMsg = rows[rows.length - 1] || null;
   const subject = rows.find((r) => r.subject)?.subject || null;
 
+  // ===== AI samenvatting met 60-min cache =====
+  let aiSummary = null;
+  let aiCachedAt = null;
+  const refresh = req.query.refresh === 'true';
+  const isEmail = lastMsg?.channel_type === 'email';
+  const canSummarize = !!process.env.ANTHROPIC_API_KEY && rows.length >= 2 && isEmail;
+
+  if (canSummarize) {
+    try {
+      let cached = null;
+      try {
+        cached = db.prepare('SELECT summary, created_at FROM thread_summaries WHERE thread_key = ?').get(threadKey);
+      } catch { /* tabel kan ontbreken op heel oude DB's */ }
+
+      const cacheMinutes = cached?.created_at
+        ? (Date.now() - new Date(cached.created_at.replace(' ', 'T') + 'Z').getTime()) / 60000
+        : Infinity;
+
+      if (cached?.summary && !refresh && cacheMinutes < 60) {
+        aiSummary = cached.summary;
+        aiCachedAt = cached.created_at;
+      } else {
+        const threadText = rows.map((r) => {
+          const who = r.direction === 'outbound' ? 'Ramon' : (r.contact_name || 'Hen');
+          const text = (r.body_text || r.snippet || '').slice(0, 400);
+          return `[${who} — ${r.received_at}]: ${text}`;
+        }).join('\n\n').slice(0, 3000);
+
+        const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+        const prompt = `Analyseer deze email thread en geef een KORTE samenvatting.
+
+THREAD:
+${threadText}
+
+Geef EXACT dit format terug, in dezelfde taal als de thread:
+
+SAMENVATTING: [1-2 zinnen wat er aan de hand is]
+STATUS: [wat is afgehandeld en wat nog open staat]
+ACTIE: [wat moet Ramon doen — concreet en specifiek. Als niks: "Geen actie nodig"]
+
+Wees KORT. Geen opsommingen. Gewone zinnen.`;
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 300,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        const data = await response.json();
+        if (response.ok && data?.content?.[0]?.text) {
+          aiSummary = data.content[0].text.trim();
+          const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+          try {
+            db.prepare(`
+              INSERT INTO thread_summaries (thread_key, summary, tokens_used, created_at)
+              VALUES (?, ?, ?, datetime('now'))
+              ON CONFLICT(thread_key) DO UPDATE SET
+                summary = excluded.summary,
+                tokens_used = excluded.tokens_used,
+                created_at = datetime('now')
+            `).run(threadKey, aiSummary, tokens);
+            aiCachedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+          } catch (e) { console.log('thread_summaries cache write failed:', e.message); }
+        } else if (cached?.summary) {
+          // API faalde — gebruik oude cache als die er is
+          aiSummary = cached.summary;
+          aiCachedAt = cached.created_at;
+        }
+      }
+    } catch (e) {
+      console.log('AI thread summary failed:', e.message);
+    }
+  }
+
   res.json({
     thread_key: threadKey,
     channel_type: lastMsg?.channel_type || null,
@@ -349,10 +430,8 @@ router.get('/:id/thread-summary', (req, res) => {
     last_snippet: lastMsg?.snippet ? lastMsg.snippet.slice(0, 200) : null,
     attachment_count: attachmentCount,
     has_attachments: attachmentCount > 0,
-    // Placeholders voor stap 11 (AI):
-    ai_summary: null,
-    ai_status_items: null,
-    ai_pending_actions: null,
+    ai_summary: aiSummary,
+    ai_summary_cached_at: aiCachedAt,
   });
 });
 

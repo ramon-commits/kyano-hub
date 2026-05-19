@@ -150,6 +150,14 @@ CREATE TABLE IF NOT EXISTS message_corrections (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Cache van AI thread-samenvattingen (per thread_key, voorkomt herhaalde API-calls)
+CREATE TABLE IF NOT EXISTS thread_summaries (
+  thread_key TEXT PRIMARY KEY,
+  summary TEXT,
+  tokens_used INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- AI-gegenereerde replies (audit trail)
 CREATE TABLE IF NOT EXISTS ai_replies (
   id TEXT PRIMARY KEY,

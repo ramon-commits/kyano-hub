@@ -5,6 +5,7 @@ import ChatThread from './ChatThread.jsx';
 import ReplyComposer from './ReplyComposer.jsx';
 import ThreadStatusBar from './ThreadStatusBar.jsx';
 import ThreadSummaryPanel from './ThreadSummaryPanel.jsx';
+import ThreadAiSummaryCard from './ThreadAiSummaryCard.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import ChannelBadge from '../shared/ChannelBadge.jsx';
 import PriorityBadge from '../shared/PriorityBadge.jsx';
@@ -196,6 +197,9 @@ export default function ConversationView({
             <i className="fa-solid fa-circle-info" />
           </button>
         </header>
+
+        {/* AI thread-samenvatting (alleen email) */}
+        {isEmail ? <ThreadAiSummaryCard messageId={messageId} /> : null}
 
         {/* Follow-up nodig banner */}
         {m.priority === 'high' && m.done_note && /follow-up/i.test(m.done_note) ? (
