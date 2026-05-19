@@ -23,18 +23,25 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
 
   const emailChannels = (channelsData?.channels || []).filter((c) => c.type === 'email' && c.is_connected);
 
+  // Reset alleen bij het openen van de modal (open false → true), niet bij elke re-render.
+  // Bug: emailChannels is een nieuwe array-ref elke render → effect liep telkens → titel werd gereset.
   useEffect(() => {
-    if (open) {
-      setTitle(contactName ? `Meeting met ${contactName}` : 'Nieuwe afspraak');
-      setDate(toDateInputValue(new Date(Date.now() + 86400000)));
-      setTime('14:00');
-      setDuration(30);
-      setAttendee(contactEmail || '');
-      setLocation('');
-      setDescription('');
-      if (emailChannels.length > 0 && !channel) setChannel(emailChannels[0].id);
+    if (!open) return;
+    setTitle(contactName ? `Meeting met ${contactName}` : 'Nieuwe afspraak');
+    setDate(toDateInputValue(new Date(Date.now() + 86400000)));
+    setTime('14:00');
+    setDuration(30);
+    setAttendee(contactEmail || '');
+    setLocation('');
+    setDescription('');
+  }, [open, contactName, contactEmail]);
+
+  // Default Calendar account zodra de lijst geladen is — apart effect, raakt overige velden niet.
+  useEffect(() => {
+    if (open && emailChannels.length > 0 && !channel) {
+      setChannel(emailChannels[0].id);
     }
-  }, [open, contactName, contactEmail, emailChannels, channel]);
+  }, [open, emailChannels, channel]);
 
   const submit = async () => {
     if (!channel) {
@@ -43,6 +50,10 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
     }
     const start = new Date(`${date}T${time}:00`);
     const end = new Date(start.getTime() + duration * 60000);
+    const attendee_emails = attendee
+      .split(',')
+      .map((e) => e.trim())
+      .filter((e) => e.includes('@'));
     try {
       await createEvent.mutateAsync({
         channel_id: channel,
@@ -50,11 +61,14 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
         start_time: start.toISOString(),
         end_time: end.toISOString(),
         duration_minutes: duration,
-        attendee_email: attendee || null,
+        attendee_emails,
         description: description || null,
         location: location || null,
       });
-      toast.success(`Afspraak toegevoegd op ${date} ${time}`, 'Gepland');
+      const invitedNote = attendee_emails.length
+        ? ` · ${attendee_emails.length} uitnodiging${attendee_emails.length === 1 ? '' : 'en'} verstuurd`
+        : '';
+      toast.success(`Afspraak toegevoegd op ${date} ${time}${invitedNote}`, 'Gepland');
       onClose?.();
     } catch (e) {
       toast.error(e.message || 'Calendar create faalde');
@@ -154,27 +168,31 @@ export default function ScheduleModal({ open, onClose, contactName, contactEmail
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-gray-500">Attendee email</label>
-            <input
-              type="email"
-              value={attendee}
-              onChange={(e) => setAttendee(e.target.value)}
-              placeholder="optioneel"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-gray-500">Locatie</label>
-            <input
-              type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="optioneel"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-gray-500">
+            Uitnodigen (email, komma-gescheiden)
+          </label>
+          <input
+            type="text"
+            value={attendee}
+            onChange={(e) => setAttendee(e.target.value)}
+            placeholder="naam@bedrijf.com, naam2@bedrijf.com"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-[11px] text-gray-500">
+            Google Calendar stuurt automatisch een email-uitnodiging naar elke ontvanger.
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-gray-500">Locatie</label>
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="optioneel"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
         </div>
 
         <div>

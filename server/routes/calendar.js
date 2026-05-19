@@ -24,7 +24,7 @@ router.get('/today', async (_req, res, next) => {
 
 router.post('/events', async (req, res, next) => {
   try {
-    const { channel_id, title, start_time, end_time, duration_minutes, attendee_email, description, location } = req.body || {};
+    const { channel_id, title, start_time, end_time, duration_minutes, attendee_emails, attendee_email, description, location } = req.body || {};
     if (!channel_id || !title || !start_time) {
       return res.status(400).json({ error: 'channel_id, title, start_time zijn verplicht' });
     }
@@ -37,12 +37,22 @@ router.post('/events', async (req, res, next) => {
       end = new Date(new Date(start_time).getTime() + 30 * 60000).toISOString();
     }
 
+    // Attendees normaliseren: array (nieuw) of single string (legacy) of niets.
+    const rawAttendees = Array.isArray(attendee_emails)
+      ? attendee_emails
+      : attendee_email
+        ? [attendee_email]
+        : [];
+    const attendees = rawAttendees
+      .map((e) => (typeof e === 'string' ? e.trim() : ''))
+      .filter((e) => e.includes('@'));
+
     const result = await createEvent({
       channelId: channel_id,
       title,
       start: start_time,
       end,
-      attendees: attendee_email ? [attendee_email] : [],
+      attendees,
       description,
       location,
     });
