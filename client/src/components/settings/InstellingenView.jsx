@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ChannelsSettings from './ChannelsSettings.jsx';
 import UnipileSettings from './UnipileSettings.jsx';
 import BirthdayImportSettings from './BirthdayImportSettings.jsx';
+import StyleProfileSettings from './StyleProfileSettings.jsx';
 import PageHeader from '../shared/PageHeader.jsx';
 import { cn } from '../../lib/utils.js';
 
@@ -47,11 +48,7 @@ export default function InstellingenView() {
             </div>
           ) : null}
           {tab === 'import' ? <BirthdayImportSettings /> : null}
-          {tab === 'style' ? (
-            <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-6 text-sm text-amber-900">
-              <i className="fa-solid fa-palette mr-1.5" />Stijlprofiel wordt gebouwd in stap 11. Hier komen je communicatie-DNA, signatures, en per-kanaal toon.
-            </div>
-          ) : null}
+          {tab === 'style' ? <StyleProfileSettings /> : null}
           {tab === 'account' ? (
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
               <Row label="Naam" value="Ramon Brugman" />

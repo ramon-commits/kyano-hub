@@ -42,6 +42,12 @@ const SAFE_ALTERS = [
   "ALTER TABLE contacts ADD COLUMN next_action_date TEXT",
   // Media in chat berichten (Unipile attachments) — JSON array
   "ALTER TABLE messages ADD COLUMN attachments_json TEXT",
+  // Snooze tijdstip — nodig voor "wacht op antwoord" follow-up detectie
+  "ALTER TABLE messages ADD COLUMN snoozed_at TEXT",
+  // Stijlprofiel velden voor automatische stijl-analyse
+  "ALTER TABLE style_profiles ADD COLUMN profile_text TEXT",
+  "ALTER TABLE style_profiles ADD COLUMN email_count INTEGER DEFAULT 0",
+  "ALTER TABLE style_profiles ADD COLUMN chat_count INTEGER DEFAULT 0",
 ];
 for (const sql of SAFE_ALTERS) {
   try { db.exec(sql); } catch (e) {

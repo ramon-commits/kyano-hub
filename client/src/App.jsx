@@ -260,13 +260,6 @@ export default function App() {
     }
   };
 
-  const onAIPlaceholder = () => {
-    toast.info('AI varianten worden gebouwd in stap 12 (AI integratie)', 'Komt eraan');
-  };
-  const onImproveNL = () => toast.info('NL verbeteren wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
-  const onTranslate = () => toast.info('Vertalen wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
-  const onFollowUp = () => toast.info('Follow-up wordt gebouwd in stap 12 (AI integratie)', 'Komt eraan');
-
   const qc = useQueryClient();
   const onBlock = async (m) => {
     const channelType = m.channel_type;
@@ -435,10 +428,6 @@ export default function App() {
           onUrgent={onUrgent}
           onArchive={onArchive}
           onForward={handleForward}
-          onAI={onAIPlaceholder}
-          onImproveNL={onImproveNL}
-          onTranslate={onTranslate}
-          onFollowUp={onFollowUp}
           onReplySent={onReplySent}
         />
       );

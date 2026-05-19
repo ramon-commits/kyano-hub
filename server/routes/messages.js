@@ -855,7 +855,7 @@ router.patch('/:id/snooze', (req, res) => {
   if (ids.length === 0) return res.status(404).json({ error: 'Message not found' });
 
   const stmt = db.prepare(`
-    UPDATE messages SET status = 'snoozed', snoozed_until = ?, updated_at = datetime('now')
+    UPDATE messages SET status = 'snoozed', snoozed_until = ?, snoozed_at = datetime('now'), updated_at = datetime('now')
     WHERE id = ? AND status = 'open'
   `);
   const tx = db.transaction(() => {
@@ -866,7 +866,7 @@ router.patch('/:id/snooze', (req, res) => {
   const changed = tx();
   if (changed === 0) {
     // Fallback: probeer ook niet-open status (compat met conversation view)
-    const fb = db.prepare(`UPDATE messages SET status='snoozed', snoozed_until=?, updated_at=datetime('now') WHERE id=?`).run(snoozed_until, req.params.id);
+    const fb = db.prepare(`UPDATE messages SET status='snoozed', snoozed_until=?, snoozed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`).run(snoozed_until, req.params.id);
     if (fb.changes === 0) return res.status(404).json({ error: 'Message not found' });
   }
   for (const id of ids) logInteraction(id, 'snoozed');
@@ -950,7 +950,7 @@ router.post('/bulk/snooze', (req, res) => {
   if (!snoozed_until) return res.status(400).json({ error: 'snoozed_until is required' });
 
   const expanded = [...new Set(ids.flatMap((id) => openIdsInThread(id)))];
-  const stmt = db.prepare(`UPDATE messages SET status = 'snoozed', snoozed_until = ?, updated_at = datetime('now') WHERE id = ? AND status = 'open'`);
+  const stmt = db.prepare(`UPDATE messages SET status = 'snoozed', snoozed_until = ?, snoozed_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'open'`);
   const tx = db.transaction(() => {
     let n = 0;
     for (const id of expanded) n += stmt.run(snoozed_until, id).changes;

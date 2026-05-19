@@ -21,10 +21,6 @@ export default function ConversationView({
   onUrgent,
   onArchive,
   onForward,
-  onAI,
-  onImproveNL,
-  onTranslate,
-  onFollowUp,
   onReplySent,
 }) {
   const { data: m, isLoading } = useMessage(messageId);
@@ -120,7 +116,8 @@ export default function ConversationView({
     else toast.error('Kon niet kopiëren');
   };
 
-  const handleFollowUp = async () => {
+  // Trigger vanuit ThreadStatusBar / banner: genereer + zet direct in textarea via window event
+  const handleFollowUpFromStatus = async () => {
     try {
       const r = await api.post('/ai/follow-up', { message_id: messageId });
       if (!r.follow_up) {
@@ -131,20 +128,12 @@ export default function ConversationView({
         r.is_ai ? 'Follow-up gegenereerd met AI' : 'Follow-up template geladen (AI niet beschikbaar)',
         'Follow-up klaar',
       );
+      window.dispatchEvent(new CustomEvent('reply-composer-set-text', { detail: r.follow_up }));
       return { text: r.follow_up };
     } catch (e) {
       toast.error(e.message || 'Follow-up genereren mislukt');
       return null;
     }
-  };
-
-  // Trigger vanuit ThreadStatusBar: genereer + zet direct in textarea via window event
-  const handleFollowUpFromStatus = async () => {
-    const result = await handleFollowUp();
-    if (result?.text) {
-      window.dispatchEvent(new CustomEvent('reply-composer-set-text', { detail: result.text }));
-    }
-    return result;
   };
 
   // Bepaal of het laatste bericht in de thread outbound is (= jij wacht op antwoord)
@@ -208,22 +197,35 @@ export default function ConversationView({
           </button>
         </header>
 
+        {/* Follow-up nodig banner */}
+        {m.priority === 'high' && m.done_note && /follow-up/i.test(m.done_note) ? (
+          <div className="mx-4 mt-2 flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+            <div className="flex items-center gap-2 text-sm text-orange-800">
+              <i className="fa-solid fa-bell" />
+              <span>Geen reactie ontvangen. Wil je een follow-up sturen?</span>
+            </div>
+            <button
+              onClick={handleFollowUpFromStatus}
+              className="rounded-lg bg-orange-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-orange-700"
+            >
+              <i className="fa-solid fa-wand-magic-sparkles mr-1.5" />Genereer follow-up
+            </button>
+          </div>
+        ) : null}
+
         {/* Thread body */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
           {isEmail ? <EmailThread message={m} threadMessages={threadMessages} /> : <ChatThread message={m} threadMessages={threadMessages} />}
         </div>
 
         <ReplyComposer
+          messageId={messageId}
           channelType={m.channel_type}
           defaultAccount={m.channel_account}
           sending={replyMut.isPending || replyMediaMut.isPending}
           onSend={handleSend}
           onSendMedia={handleSendMedia}
           onCopy={handleCopy}
-          onAI={() => onAI?.(m)}
-          onImproveNL={() => onImproveNL?.(m)}
-          onTranslate={() => onTranslate?.(m)}
-          onFollowUp={handleFollowUp}
         />
 
         <ThreadStatusBar

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Picker from '@emoji-mart/react';
 import emojiData from '@emoji-mart/data';
 import { useQuickReplies } from '../../hooks/useQuickReplies.js';
+import { useToast } from '../../hooks/useToast.jsx';
+import { api } from '../../lib/api.js';
 
 // Detect a /shortcut at the current cursor: must be at start, or preceded by whitespace.
 function findTriggerAt(text, caret) {
   if (caret == null) caret = text.length;
   const before = text.slice(0, caret);
-  // Walk back to find the start of the current word
   const match = before.match(/(^|\s)(\/\w*)$/);
   if (!match) return null;
   const trigger = match[2];
@@ -18,7 +19,16 @@ function findTriggerAt(text, caret) {
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-export default function ReplyComposer({ channelType, defaultAccount, sending, onSend, onSendMedia, onCopy, onAI, onImproveNL, onTranslate, onFollowUp }) {
+const LANGS = [
+  ['en', 'Engels'],
+  ['de', 'Duits'],
+  ['fr', 'Frans'],
+  ['es', 'Spaans'],
+  ['it', 'Italiaans'],
+  ['nl', 'Nederlands'],
+];
+
+export default function ReplyComposer({ messageId, channelType, defaultAccount, sending, onSend, onSendMedia, onCopy }) {
   const [text, setText] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [cc, setCc] = useState('');
@@ -28,10 +38,14 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
   const [showEmoji, setShowEmoji] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [attachError, setAttachError] = useState(null);
-  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState(null);
+  const [showLangPicker, setShowLangPicker] = useState(false);
+  const [variants, setVariants] = useState(null);
   const ref = useRef(null);
   const emojiWrapRef = useRef(null);
   const fileInputRef = useRef(null);
+  const langWrapRef = useRef(null);
+  const toast = useToast();
 
   const { data: qrData } = useQuickReplies(channelType);
   const quickReplies = qrData?.quick_replies || [];
@@ -45,7 +59,9 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     setShowEmoji(false);
     setAttachedFiles([]);
     setAttachError(null);
-  }, [defaultAccount]);
+    setVariants(null);
+    setShowLangPicker(false);
+  }, [defaultAccount, messageId]);
 
   // Cleanup blob URLs voor previews
   const previewUrls = useMemo(
@@ -83,7 +99,6 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     setAttachError(null);
   }
 
-  // Listen for "r" shortcut from App — focus the textarea
   useEffect(() => {
     function onFocusEvent() {
       ref.current?.focus();
@@ -92,7 +107,6 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     return () => window.removeEventListener('focus-reply-composer', onFocusEvent);
   }, []);
 
-  // Listen for external "set text" (bv. Follow-up vanuit ThreadStatusBar)
   useEffect(() => {
     function onSetText(e) {
       const next = typeof e.detail === 'string' ? e.detail : (e.detail?.text || '');
@@ -110,7 +124,6 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     return () => window.removeEventListener('reply-composer-set-text', onSetText);
   }, []);
 
-  // Click-outside / Esc to close the emoji picker
   useEffect(() => {
     if (!showEmoji) return undefined;
     function onDocDown(e) {
@@ -128,6 +141,17 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
       document.removeEventListener('keydown', onKey);
     };
   }, [showEmoji]);
+
+  useEffect(() => {
+    if (!showLangPicker) return undefined;
+    function onDocDown(e) {
+      if (langWrapRef.current && !langWrapRef.current.contains(e.target)) {
+        setShowLangPicker(false);
+      }
+    }
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [showLangPicker]);
 
   const insertEmoji = (emoji) => {
     const native = emoji?.native || '';
@@ -154,14 +178,12 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
   }, [trigger, quickReplies]);
   const showDropdown = matches.length > 0 && trigger;
 
-  // Reset activeMatch when trigger or matches change
   useEffect(() => { setActiveMatch(0); }, [trigger?.trigger, matches.length]);
 
   const insertTemplate = (qr) => {
     if (!trigger) return;
     const next = text.slice(0, trigger.start) + qr.body + text.slice(trigger.end);
     setText(next);
-    // Move caret to end of inserted template
     requestAnimationFrame(() => {
       if (ref.current) {
         const pos = trigger.start + qr.body.length;
@@ -203,6 +225,93 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
     }
   };
 
+  const setTextWithFocus = (next) => {
+    setText(next);
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        ref.current.focus();
+        ref.current.setSelectionRange(next.length, next.length);
+        setCaret(next.length);
+      }
+    });
+  };
+
+  const handleImproveNL = async () => {
+    if (!text.trim()) { toast.warning('Type eerst een bericht'); return; }
+    setLoadingAction('improve');
+    try {
+      const r = await api.post('/ai/improve-nl', { text });
+      if (r?.result) {
+        setTextWithFocus(r.result);
+        toast.success('Tekst verbeterd');
+      } else {
+        toast.error('Geen resultaat ontvangen');
+      }
+    } catch (e) {
+      toast.error(e.message || 'Verbeteren mislukt');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleTranslate = async (lang) => {
+    if (!text.trim()) { toast.warning('Type eerst een bericht'); return; }
+    setShowLangPicker(false);
+    setLoadingAction('translate');
+    try {
+      const r = await api.post('/ai/translate', { text, lang });
+      if (r?.result) {
+        setTextWithFocus(r.result);
+        toast.success(`Vertaald naar ${lang.toUpperCase()}`);
+      } else {
+        toast.error('Geen vertaling ontvangen');
+      }
+    } catch (e) {
+      toast.error(e.message || 'Vertalen mislukt');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleVariants = async () => {
+    if (!messageId) { toast.warning('Geen bericht geselecteerd'); return; }
+    setLoadingAction('variants');
+    try {
+      const r = await api.post('/ai/variants', { message_id: messageId });
+      const v = r?.variants;
+      if (Array.isArray(v) && v.length > 0) {
+        setVariants(v);
+      } else {
+        toast.error('Geen varianten ontvangen');
+      }
+    } catch (e) {
+      toast.error(e.message || 'Varianten genereren mislukt');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleFollowUp = async () => {
+    if (!messageId) { toast.warning('Geen bericht geselecteerd'); return; }
+    setLoadingAction('followup');
+    try {
+      const r = await api.post('/ai/follow-up', { message_id: messageId });
+      if (r?.follow_up) {
+        setTextWithFocus(r.follow_up);
+        toast.success(
+          r.is_ai ? 'Follow-up gegenereerd met AI' : 'Follow-up template geladen (AI niet beschikbaar)',
+          'Follow-up klaar',
+        );
+      } else {
+        toast.error('Geen follow-up ontvangen');
+      }
+    } catch (e) {
+      toast.error(e.message || 'Follow-up genereren mislukt');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
   const isEmail = channelType === 'email';
 
   return (
@@ -238,6 +347,40 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
             placeholder="BCC: email@example.com"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
           />
+        </div>
+      ) : null}
+
+      {variants ? (
+        <div className="mb-3 rounded-xl border border-purple-200 bg-purple-50/40 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-700">
+              <i className="fa-solid fa-robot mr-1" />Kies een variant
+            </span>
+            <button
+              onClick={() => setVariants(null)}
+              className="text-[11px] text-gray-500 hover:text-gray-700"
+            >
+              Sluiten
+            </button>
+          </div>
+          <div className="space-y-2">
+            {variants.map((v, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  setTextWithFocus(v.text || '');
+                  setVariants(null);
+                  toast.success(`Variant "${v.label || `${i + 1}`}" gekozen`);
+                }}
+                className="block w-full rounded-lg border border-gray-200 bg-white p-3 text-left transition-colors hover:border-purple-300 hover:bg-purple-50"
+              >
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-700">
+                  {v.label || `Variant ${i + 1}`}
+                </span>
+                <p className="mt-1 whitespace-pre-line text-sm text-gray-700 line-clamp-4">{v.text}</p>
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -327,7 +470,6 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
               if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); insertTemplate(matches[activeMatch]); return; }
               if (e.key === 'Escape') {
                 e.preventDefault();
-                // Clear the trigger so the dropdown closes (replace /text with nothing)
                 const next = text.slice(0, trigger.start) + text.slice(trigger.end);
                 setText(next);
                 requestAnimationFrame(() => {
@@ -371,59 +513,87 @@ export default function ReplyComposer({ channelType, defaultAccount, sending, on
           <i className="fa-solid fa-clipboard-list mr-1.5" />Kopieer
         </button>
         <button
-          onClick={onAI}
-          disabled={sending}
+          onClick={handleVariants}
+          disabled={sending || loadingAction === 'variants'}
           className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-100 disabled:opacity-50"
+          title="Genereer 3 strategische antwoord-varianten"
         >
-          <i className="fa-solid fa-robot mr-1.5" />AI varianten
+          {loadingAction === 'variants' ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-700" />
+              Genereren…
+            </span>
+          ) : (
+            <><i className="fa-solid fa-robot mr-1.5" />AI varianten</>
+          )}
         </button>
 
         <span className="mx-1 hidden h-6 w-px self-center bg-gray-200 sm:inline-block" />
 
         <button
-          onClick={onImproveNL}
-          disabled={sending}
+          onClick={handleImproveNL}
+          disabled={sending || loadingAction === 'improve'}
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
-          title="Verbeter de Nederlandse schrijfstijl (stap 12)"
+          title="Verbeter de Nederlandse schrijfstijl"
         >
-          <i className="fa-solid fa-pen-to-square mr-1.5" />Verbeter NL
+          {loadingAction === 'improve' ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-700" />
+              Verbeteren…
+            </span>
+          ) : (
+            <><i className="fa-solid fa-pen-to-square mr-1.5" />Verbeter NL</>
+          )}
         </button>
+
+        <div className="relative" ref={langWrapRef}>
+          <button
+            onClick={() => {
+              if (!text.trim()) { toast.warning('Type eerst een bericht'); return; }
+              setShowLangPicker((v) => !v);
+            }}
+            disabled={sending || loadingAction === 'translate'}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+              showLangPicker
+                ? 'border-purple-200 bg-purple-50 text-purple-700'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700'
+            }`}
+            title="Vertaal naar een andere taal"
+          >
+            {loadingAction === 'translate' ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-700" />
+                Vertalen…
+              </span>
+            ) : (
+              <><i className="fa-solid fa-earth-europe mr-1.5" />Vertaal</>
+            )}
+          </button>
+          {showLangPicker ? (
+            <div className="absolute bottom-full left-0 z-30 mb-1 min-w-[140px] rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+              {LANGS.map(([code, name]) => (
+                <button
+                  key={code}
+                  onClick={() => handleTranslate(code)}
+                  className="block w-full rounded px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700"
+                >
+                  <span className="mr-2 inline-block w-7 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{code}</span>
+                  {name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
         <button
-          onClick={onTranslate}
-          disabled={sending}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
-          title="Vertaal naar andere taal (stap 12)"
-        >
-          <i className="fa-solid fa-earth-europe mr-1.5" />Vertaal
-        </button>
-        <button
-          onClick={async () => {
-            if (!onFollowUp || followUpLoading) return;
-            setFollowUpLoading(true);
-            try {
-              const result = await onFollowUp();
-              if (result?.text) {
-                setText(result.text);
-                requestAnimationFrame(() => {
-                  if (ref.current) {
-                    ref.current.focus();
-                    const pos = result.text.length;
-                    ref.current.setSelectionRange(pos, pos);
-                    setCaret(pos);
-                  }
-                });
-              }
-            } finally {
-              setFollowUpLoading(false);
-            }
-          }}
-          disabled={sending || followUpLoading}
+          onClick={handleFollowUp}
+          disabled={sending || loadingAction === 'followup'}
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
           title="Genereer follow-up bericht op basis van deze thread"
         >
-          {followUpLoading ? (
+          {loadingAction === 'followup' ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-600" />
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-700" />
               Genereren…
             </span>
           ) : (

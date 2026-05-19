@@ -52,6 +52,9 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           {m.status === 'waiting' ? (
             <Badge color="#a16207" bg="#fef3c7" size="xs"><i className="fa-solid fa-hourglass-half mr-1" />Wacht op reactie</Badge>
           ) : null}
+          {m.priority === 'high' && m.done_note && /follow-up/i.test(m.done_note) ? (
+            <Badge color="#c2410c" bg="#ffedd5" size="xs"><i className="fa-solid fa-bell mr-1" />Follow-up nodig</Badge>
+          ) : null}
         </div>
 
         <div className="mt-0.5 flex items-baseline gap-1.5 text-[13px]">
