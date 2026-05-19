@@ -34,7 +34,7 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onCompose, selectedId, onMessagesChange }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onForward, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onCompose, selectedId, onMessagesChange }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(50);
@@ -175,6 +175,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
                       onFastDone={onFastDone}
                       onSchedule={onSchedule}
                       onArchive={onArchive}
+                      onForward={onForward}
                       onUnpin={onUnpin}
                       isPinned
                     />
@@ -214,6 +215,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
                       onArchive={onArchive}
                       onBlock={onBlock}
                       onPin={onPin}
+                      onForward={onForward}
                       selectable
                       isSelected={selection.selectedIds.has(m.id)}
                       onToggleSelect={selection.toggle}

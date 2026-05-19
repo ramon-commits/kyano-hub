@@ -4,7 +4,7 @@ import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Badge from '../shared/Badge.jsx';
 import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
-export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onPin, onUnpin, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
+export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onPin, onUnpin, onForward, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
 
@@ -127,6 +127,12 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           {onPin && !isPinned ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onPin(m); }} title="Vastzetten" hoverColor="hover:bg-amber-50 hover:text-amber-700">
               <i className="fa-solid fa-thumbtack" />
+            </ActionBtn>
+          ) : null}
+          {/* 6. Doorsturen — alleen email */}
+          {onForward && m.channel_type === 'email' ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onForward(m); }} title="Doorsturen (w)" hoverColor="hover:bg-indigo-50 hover:text-indigo-700">
+              <i className="fa-solid fa-share" />
             </ActionBtn>
           ) : null}
           {/* Reopen blijft beschikbaar voor logboek/snoozed rijen */}

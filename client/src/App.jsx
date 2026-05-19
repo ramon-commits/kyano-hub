@@ -459,6 +459,7 @@ export default function App() {
             onBulkDone={handleBulkDone}
             onBulkArchive={onBulkArchive}
             onBulkBlock={onBulkBlock}
+            onForward={handleForward}
             onCompose={() => setComposeOpen(true)}
             selectedId={selectedMessageId}
             onMessagesChange={handleMessagesChange}
