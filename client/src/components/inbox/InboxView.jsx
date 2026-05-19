@@ -34,7 +34,7 @@ function MetricCard({ icon, label, value, color }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, selectedId, onMessagesChange }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onCompose, selectedId, onMessagesChange }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(50);
@@ -104,14 +104,25 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
               {stats ? `${stats.open_count} bericht${stats?.open_count === 1 ? '' : 'en'} wachten op actie` : 'Laden…'}
             </p>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={syncAll.isPending}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <i className={`fa-solid fa-arrows-rotate ${syncAll.isPending ? 'animate-spin' : ''}`} />
-            {syncAll.isPending ? 'Synchroniseren…' : 'Nieuwe check'}
-          </button>
+          <div className="flex items-center gap-2">
+            {onCompose ? (
+              <button
+                onClick={onCompose}
+                title="Nieuw bericht (n)"
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+              >
+                <i className="fa-solid fa-pen-to-square" />Nieuw bericht
+              </button>
+            ) : null}
+            <button
+              onClick={handleSync}
+              disabled={syncAll.isPending}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <i className={`fa-solid fa-arrows-rotate ${syncAll.isPending ? 'animate-spin' : ''}`} />
+              {syncAll.isPending ? 'Synchroniseren…' : 'Nieuwe check'}
+            </button>
+          </div>
         </div>
 
         {/* Metric cards */}

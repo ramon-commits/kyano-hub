@@ -26,7 +26,7 @@ function dotTitle(channel) {
   return `${channel.label} — niet verbonden`;
 }
 
-export default function Sidebar({ active, onSelect }) {
+export default function Sidebar({ active, onSelect, onCompose }) {
   const { data: stats } = useStats();
   const { data: channelsData } = useChannels();
   const channels = channelsData?.channels || [];
@@ -55,12 +55,38 @@ export default function Sidebar({ active, onSelect }) {
       <div className={cn('flex items-center gap-3 py-5', collapsed ? 'justify-center px-2' : 'px-5')}>
         <img src="/icon.svg" alt="Kyano" className="h-9 w-9 shrink-0 rounded-lg" />
         {!collapsed ? (
-          <div className="leading-tight">
-            <div className="font-semibold text-white">Comm Hub</div>
-            <div className="text-[11px] opacity-60">Kyano Horaizon</div>
-          </div>
+          <>
+            <div className="leading-tight">
+              <div className="font-semibold text-white">Comm Hub</div>
+              <div className="text-[11px] opacity-60">Kyano Horaizon</div>
+            </div>
+            {onCompose ? (
+              <button
+                onClick={onCompose}
+                title="Nieuw bericht (n)"
+                aria-label="Nieuw bericht"
+                className="ml-auto grid h-7 w-7 place-items-center rounded-md text-white shadow-sm transition-colors hover:opacity-90"
+                style={{ background: 'var(--accent)' }}
+              >
+                <i className="fa-solid fa-plus text-xs" />
+              </button>
+            ) : null}
+          </>
         ) : null}
       </div>
+      {collapsed && onCompose ? (
+        <div className="px-2 pb-2">
+          <button
+            onClick={onCompose}
+            title="Nieuw bericht (n)"
+            aria-label="Nieuw bericht"
+            className="grid h-9 w-full place-items-center rounded-md text-white shadow-sm transition-colors hover:opacity-90"
+            style={{ background: 'var(--accent)' }}
+          >
+            <i className="fa-solid fa-plus" />
+          </button>
+        </div>
+      ) : null}
 
       <nav className="flex-1 overflow-y-auto px-2.5 scrollbar-thin">
         {NAV_GROUPS.map((group, gi) => (

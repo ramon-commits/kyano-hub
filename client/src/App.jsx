@@ -19,6 +19,7 @@ import SnoozeModal from './components/modals/SnoozeModal.jsx';
 import DoneModal from './components/modals/DoneModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
 import ForwardModal from './components/modals/ForwardModal.jsx';
+import ComposeModal from './components/modals/ComposeModal.jsx';
 import CommandPalette from './components/shared/CommandPalette.jsx';
 import { useHealth } from './hooks/useStats.js';
 import { useArchiveMessage, useBulkArchive, useBulkDone, useBulkReopen, useBulkSnooze, useDoneMessage, usePinMessage, usePriorityMessage, useReopenMessage, useSnoozeMessage, useUnpinMessage, useWaitingMessage } from './hooks/useMessages.js';
@@ -67,6 +68,7 @@ export default function App() {
   const [scheduleModal, setScheduleModal] = useState({ open: false, contact: null, message: null });
   const [forwardModal, setForwardModal] = useState({ open: false, message: null });
   const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const toast = useToast();
   const snoozeMut = useSnoozeMessage();
@@ -342,10 +344,15 @@ export default function App() {
     const map = {
       Escape: () => {
         if (cmdkOpen) return false; // CommandPalette handles its own Escape
-        if (snoozeModal.open || doneModal.open || scheduleModal.open || forwardModal.open) return false;
+        if (snoozeModal.open || doneModal.open || scheduleModal.open || forwardModal.open || composeOpen) return false;
         if (selectedMessageId) { setSelectedMessageId(null); return true; }
         if (selectedContactId) { setSelectedContactId(null); return true; }
         return false;
+      },
+      n: () => {
+        if (composeOpen) return false;
+        setComposeOpen(true);
+        return true;
       },
       k: (e) => {
         if (e.metaKey || e.ctrlKey) {
@@ -400,7 +407,7 @@ export default function App() {
       }
     }
     return map;
-  }, [cmdkOpen, snoozeModal.open, doneModal.open, scheduleModal.open, forwardModal.open, selectedMessageId, selectedContactId]);
+  }, [cmdkOpen, snoozeModal.open, doneModal.open, scheduleModal.open, forwardModal.open, composeOpen, selectedMessageId, selectedContactId]);
 
   useKeyboard(shortcutMap);
 
@@ -452,6 +459,7 @@ export default function App() {
             onBulkDone={handleBulkDone}
             onBulkArchive={onBulkArchive}
             onBulkBlock={onBulkBlock}
+            onCompose={() => setComposeOpen(true)}
             selectedId={selectedMessageId}
             onMessagesChange={handleMessagesChange}
           />
@@ -502,7 +510,11 @@ export default function App() {
   if (noAccountsConnected && view === 'inbox' && !selectedMessageId) {
     return (
       <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
-        <Sidebar active={view} onSelect={(id) => { setView(id); setSelectedMessageId(null); }} />
+        <Sidebar
+          active={view}
+          onSelect={(id) => { setView(id); setSelectedMessageId(null); }}
+          onCompose={() => setComposeOpen(true)}
+        />
         <main className="flex flex-1 flex-col overflow-hidden">
           <WelcomeScreen onGoToSettings={() => setView('instellingen')} />
         </main>
@@ -512,7 +524,11 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
-      <Sidebar active={view} onSelect={(id) => { setView(id); setSelectedMessageId(null); }} />
+      <Sidebar
+        active={view}
+        onSelect={(id) => { setView(id); setSelectedMessageId(null); }}
+        onCompose={() => setComposeOpen(true)}
+      />
 
       <main className="flex flex-1 flex-col overflow-hidden">
         {!selectedMessageId ? (
@@ -577,6 +593,8 @@ export default function App() {
         onOpenMessage={(m) => setSelectedMessageId(m.id)}
         onOpenContact={(c) => setSelectedContactId(c.id)}
       />
+
+      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} />
     </div>
   );
 }

@@ -68,6 +68,8 @@ function parseDtStartToMonthDay(value) {
 // GET /api/contacts
 router.get('/', (req, res) => {
   const { search, sort, filter } = req.query;
+  const withChannels = req.query.with_channels === 'true';
+  const limit = Math.min(parseInt(req.query.limit) || 0, 200);
 
   const where = [];
   const params = {};
@@ -95,6 +97,7 @@ router.get('/', (req, res) => {
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
+  const limitSql = limit > 0 ? `LIMIT ${limit}` : '';
   const sql = `
     SELECT
       c.*,
@@ -104,9 +107,28 @@ router.get('/', (req, res) => {
     FROM contacts c
     ${whereSql}
     ORDER BY ${orderBy}
+    ${limitSql}
   `;
 
-  const rows = db.prepare(sql).all(params);
+  let rows = db.prepare(sql).all(params);
+
+  if (withChannels && rows.length > 0) {
+    const ids = rows.map((c) => c.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const channelRows = db.prepare(`
+      SELECT DISTINCT m.contact_id, ch.type
+      FROM messages m
+      LEFT JOIN channels ch ON ch.id = m.channel_id
+      WHERE m.contact_id IN (${placeholders}) AND ch.type IS NOT NULL
+    `).all(ids);
+    const byContact = {};
+    for (const row of channelRows) {
+      if (!byContact[row.contact_id]) byContact[row.contact_id] = [];
+      if (!byContact[row.contact_id].includes(row.type)) byContact[row.contact_id].push(row.type);
+    }
+    rows = rows.map((c) => ({ ...c, available_channels: byContact[c.id] || [] }));
+  }
+
   res.json({ contacts: rows, total: rows.length });
 });
 

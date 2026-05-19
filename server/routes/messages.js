@@ -846,6 +846,97 @@ router.post('/compose', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /api/messages/compose-chat — start nieuw WhatsApp/LinkedIn/Instagram gesprek of stuur in bestaande chat
+router.post('/compose-chat', async (req, res) => {
+  try {
+    const { channel_id, contact_id, phone, recipient_name, text } = req.body || {};
+    if (!channel_id || !text) return res.status(400).json({ error: 'channel_id en text zijn verplicht' });
+
+    const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(channel_id);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    if (!['whatsapp', 'linkedin', 'instagram'].includes(channel.type)) {
+      return res.status(400).json({ error: 'Channel is geen chat-kanaal' });
+    }
+
+    let unipileAccountId = null;
+    try {
+      const cfg = channel.config_json ? JSON.parse(channel.config_json) : {};
+      unipileAccountId = cfg.unipile_account_id || null;
+    } catch { /* ignore */ }
+    if (!unipileAccountId) return res.status(400).json({ error: 'Channel niet gekoppeld aan Unipile' });
+
+    // Bepaal ontvanger — voorkeur: phone-arg, anders contact lookup
+    let attendeeIdentifier = phone || null;
+    let contact = contact_id ? db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact_id) : null;
+    if (!attendeeIdentifier && contact?.phone) attendeeIdentifier = contact.phone;
+
+    // Bestaande chat? → hergebruik thread_id (sendMessage in plaats van startNewChat)
+    let existingThreadId = null;
+    if (contact_id) {
+      const existing = db.prepare(`
+        SELECT thread_id FROM messages
+        WHERE contact_id = ? AND channel_id = ? AND thread_id IS NOT NULL
+        ORDER BY received_at DESC
+        LIMIT 1
+      `).get(contact_id, channel_id);
+      existingThreadId = existing?.thread_id || null;
+    }
+
+    if (existingThreadId) {
+      try {
+        await unipile.sendMessage(existingThreadId, text);
+        const msgId = uuid();
+        db.prepare(`
+          INSERT INTO messages (id, channel_id, contact_id, direction, snippet, body_text, thread_id, status, priority, received_at)
+          VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'archived', 'medium', datetime('now'))
+        `).run(msgId, channel_id, contact?.id || null, text.slice(0, 200), text, existingThreadId);
+        return res.json({ ok: true, message_id: msgId, thread_id: existingThreadId, used_existing_chat: true });
+      } catch (e) {
+        console.log('[COMPOSE-CHAT] send to existing chat failed, trying new chat:', e.message);
+      }
+    }
+
+    if (!attendeeIdentifier) {
+      const deepLink = channel.type === 'whatsapp'
+        ? `https://wa.me/?text=${encodeURIComponent(text)}`
+        : null;
+      return res.json({
+        ok: false,
+        fallback: true,
+        deep_link: deepLink,
+        error: 'Geen telefoonnummer of bestaande chat gevonden.',
+      });
+    }
+
+    try {
+      console.log(`[COMPOSE-CHAT] startNewChat account=${unipileAccountId} attendee=${attendeeIdentifier} text=${text.slice(0, 30)}`);
+      const result = await unipile.startNewChat(unipileAccountId, attendeeIdentifier, text);
+      const newThreadId = result?.chat_id || result?.id || null;
+
+      const msgId = uuid();
+      db.prepare(`
+        INSERT INTO messages (id, channel_id, contact_id, direction, snippet, body_text, thread_id, status, priority, received_at)
+        VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'archived', 'medium', datetime('now'))
+      `).run(msgId, channel_id, contact?.id || null, text.slice(0, 200), text, newThreadId);
+
+      return res.json({ ok: true, message_id: msgId, thread_id: newThreadId, used_existing_chat: false });
+    } catch (e) {
+      const cleanPhone = String(attendeeIdentifier || '').replace(/[^0-9+]/g, '');
+      const deepLink = channel.type === 'whatsapp' && cleanPhone
+        ? `https://wa.me/${cleanPhone.replace(/^\+/, '')}?text=${encodeURIComponent(text)}`
+        : null;
+      return res.json({
+        ok: false,
+        fallback: true,
+        deep_link: deepLink,
+        error: e.message || 'Versturen via Unipile mislukt',
+      });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Compose-chat mislukt' });
+  }
+});
+
 // PATCH /api/messages/:id/snooze — werkt op de hele thread (alle open berichten)
 router.patch('/:id/snooze', (req, res) => {
   const { snoozed_until } = req.body;
