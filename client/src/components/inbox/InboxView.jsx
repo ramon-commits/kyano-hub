@@ -11,26 +11,16 @@ import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import BulkActionBar from '../shared/BulkActionBar.jsx';
 
-function MetricCard({ icon, label, value, color }) {
+function MetricPill({ label, value, color, active, onClick, hide }) {
+  if (hide) return null;
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:shadow-md">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
-            {label}
-          </div>
-          <div className="mt-2 text-[28px] font-bold leading-none" style={{ color: color.text }}>
-            {value ?? '—'}
-          </div>
-        </div>
-        <div
-          className="grid h-10 w-10 place-items-center rounded-lg text-lg"
-          style={{ background: color.bg, color: color.text }}
-        >
-          {icon}
-        </div>
-      </div>
-    </div>
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all hover:shadow-sm ${color} ${active ? 'ring-2 ring-blue-500/20 shadow-sm' : ''}`}
+    >
+      <span className="text-base font-bold">{value ?? 0}</span>
+      <span className="text-xs opacity-75">{label}</span>
+    </button>
   );
 }
 
@@ -38,10 +28,12 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(50);
+  const [statusFilter, setStatusFilter] = useState(null);
 
   const params = { status: 'open', limit };
   if (channelFilter !== 'all') params.channel_type = channelFilter;
   if (search) params.search = search;
+  if (statusFilter === 'urgent') params.priority = 'high';
 
   const { data, isLoading } = useMessages(params);
   const { data: pinnedData } = usePinnedMessages();
@@ -50,7 +42,11 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
   const toast = useToast();
 
   // Reset paginatie wanneer filter of zoekterm verandert
-  useEffect(() => { setLimit(50); }, [channelFilter, search]);
+  useEffect(() => { setLimit(50); }, [channelFilter, search, statusFilter]);
+
+  const handleStatusFilter = (filter) => {
+    setStatusFilter((current) => (current === filter ? null : filter));
+  };
 
 
   const allMessages = data?.messages || [];
@@ -125,12 +121,37 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
           </div>
         </div>
 
-        {/* Metric cards */}
-        <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <MetricCard icon={<i className="fa-solid fa-inbox" />} label="Open" value={stats?.open_count} color={{ bg: '#eff6ff', text: '#3b82f6' }} />
-          <MetricCard icon={<i className="fa-solid fa-clock" />} label="Snoozed" value={stats?.snoozed_count} color={{ bg: '#fff7ed', text: '#ea580c' }} />
-          <MetricCard icon={<i className="fa-solid fa-circle-check" />} label="Vandaag afgehandeld" value={stats?.done_today} color={{ bg: '#dcfce7', text: '#16a34a' }} />
-          <MetricCard icon={<i className="fa-solid fa-fire" />} label="Urgent" value={stats?.urgent_count} color={{ bg: '#fef2f2', text: '#dc2626' }} />
+        {/* Metric pills (compact) */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <MetricPill
+            label="Open"
+            value={stats?.open_count || 0}
+            color="text-blue-700 bg-blue-50 border-blue-200"
+            active={statusFilter === null}
+            onClick={() => setStatusFilter(null)}
+          />
+          <MetricPill
+            label="Snoozed"
+            value={stats?.snoozed_count || 0}
+            color="text-orange-700 bg-orange-50 border-orange-200"
+            active={false}
+            onClick={() => onNavigate?.('snoozed')}
+          />
+          <MetricPill
+            label="Vandaag afgehandeld"
+            value={stats?.done_today || 0}
+            color="text-green-700 bg-green-50 border-green-200"
+            active={false}
+            onClick={() => onNavigate?.('logboek')}
+          />
+          <MetricPill
+            label="Urgent"
+            value={stats?.urgent_count || 0}
+            color="text-red-700 bg-red-50 border-red-200"
+            active={statusFilter === 'urgent'}
+            onClick={() => handleStatusFilter('urgent')}
+            hide={!stats?.urgent_count}
+          />
         </div>
 
         <MessageFilters
@@ -143,8 +164,8 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
 
       {/* Lijst + agenda */}
       <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
-        <div className="mx-8 mt-6">
-          <DailySummaryCard onOpenContact={onOpenContact} />
+        <div className="mx-8 mt-4">
+          <DailySummaryCard />
         </div>
 
         {/* 2-kolom op lg+, gestapeld op kleiner scherm (agenda boven berichten) */}
