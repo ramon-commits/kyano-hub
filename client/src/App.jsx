@@ -54,13 +54,41 @@ export default function App() {
   // Volgorde van zichtbare berichten in de huidige lijst-view (Inbox/Snoozed) — voor auto-advance
   const messageOrderRef = useRef([]);
   const handleMessagesChange = useCallback((ids) => { messageOrderRef.current = ids || []; }, []);
+
+  // Skip-list: berichten die net zijn afgehandeld maar nog in messageOrderRef staan omdat
+  // de query nog niet ge-refetched is. Voorkomt dat we terugspringen naar het zojuist
+  // afgehandelde bericht in de Superhuman-style triage flow.
+  const handledIdsRef = useRef(new Set());
+  const toastRef = useRef(null);
+
   const advanceSelection = useCallback((currentId) => {
-    const list = messageOrderRef.current;
-    if (!list?.length) { setSelectedMessageId(null); return; }
-    const i = list.indexOf(currentId);
-    if (i === -1) { setSelectedMessageId(null); return; }
-    const next = list[i + 1] || list[i - 1] || null;
-    setSelectedMessageId(next && next !== currentId ? next : null);
+    handledIdsRef.current.add(currentId);
+
+    const list = messageOrderRef.current || [];
+    const currentIndex = list.indexOf(currentId);
+
+    let nextId = null;
+    // Zoek vooruit naar het eerste bericht dat nog niet is afgehandeld
+    const startIndex = currentIndex === -1 ? 0 : currentIndex + 1;
+    for (let i = startIndex; i < list.length; i++) {
+      if (!handledIdsRef.current.has(list[i])) { nextId = list[i]; break; }
+    }
+    // Geen vooruit gevonden? Zoek achteruit
+    if (!nextId && currentIndex > 0) {
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        if (!handledIdsRef.current.has(list[i])) { nextId = list[i]; break; }
+      }
+    }
+
+    if (nextId) {
+      setSelectedMessageId(nextId);
+    } else {
+      setSelectedMessageId(null);
+      toastRef.current?.success('Inbox afgewerkt!');
+    }
+
+    // Clean-up na 5s — voorkomt geheugenlek en zorgt dat heropende berichten weer mee tellen
+    setTimeout(() => { handledIdsRef.current.delete(currentId); }, 5000);
   }, []);
 
   const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null, bulkIds: null });
@@ -71,6 +99,9 @@ export default function App() {
   const [composeOpen, setComposeOpen] = useState(false);
 
   const toast = useToast();
+  // Houd een ref-pointer naar toast zodat useCallback's (zoals advanceSelection) hem kunnen gebruiken
+  // zonder dat de callback bij elke render her-aangemaakt wordt (toast object is niet stabiel).
+  toastRef.current = toast;
   const snoozeMut = useSnoozeMessage();
   const doneMut = useDoneMessage();
   const reopenMut = useReopenMessage();
@@ -390,6 +421,12 @@ export default function App() {
         // Open snooze-modal voor het geopende bericht
         if (!selectedMessageId) return false;
         handleSnooze({ id: selectedMessageId });
+        return true;
+      },
+      d: () => {
+        // Open done-modal voor het geopende bericht
+        if (!selectedMessageId) return false;
+        handleDone({ id: selectedMessageId });
         return true;
       },
       w: () => {
