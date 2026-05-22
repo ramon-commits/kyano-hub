@@ -5,21 +5,35 @@ import { useToast } from '../../hooks/useToast.jsx';
 import { useSelection, useSelectionShortcuts } from '../../hooks/useSelection.js';
 import MessageRow from './MessageRow.jsx';
 import MessageFilters from './MessageFilters.jsx';
-import DailySummaryCard from './DailySummaryCard.jsx';
 import AgendaWidget from './AgendaWidget.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import BulkActionBar from '../shared/BulkActionBar.jsx';
 
-function MetricPill({ label, value, color, active, onClick, hide }) {
+function MetricRow({ label, value, icon, color, onClick, active }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors hover:bg-white ${active ? 'bg-white shadow-sm' : ''}`}
+    >
+      <span className="flex items-center gap-2 text-gray-600">
+        <i className={`fa-solid ${icon} ${color} w-4 text-xs`} />
+        {label}
+      </span>
+      <span className={`font-bold ${color}`}>{value || 0}</span>
+    </button>
+  );
+}
+
+function MetricPillMini({ label, value, color, active, onClick, hide }) {
   if (hide) return null;
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all hover:shadow-sm ${color} ${active ? 'ring-2 ring-blue-500/20 shadow-sm' : ''}`}
+      className={`flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium transition-all hover:shadow-sm ${color} ${active ? 'ring-2 ring-blue-500/20 shadow-sm' : ''}`}
     >
-      <span className="text-base font-bold">{value ?? 0}</span>
-      <span className="text-xs opacity-75">{label}</span>
+      <span className="text-sm font-bold">{value || 0}</span>
+      <span className="opacity-75">{label}</span>
     </button>
   );
 }
@@ -47,7 +61,6 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
   const handleStatusFilter = (filter) => {
     setStatusFilter((current) => (current === filter ? null : filter));
   };
-
 
   const allMessages = data?.messages || [];
   const totalMessages = data?.total || 0;
@@ -90,13 +103,14 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
   };
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Page header */}
-      <div className="border-b border-gray-200 bg-white px-8 pb-5 pt-6">
-        <div className="mb-5 flex items-end justify-between gap-4">
+    <div className="flex h-full">
+      {/* LINKER KOLOM: header + filters + berichten */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Header — compact, 1 regel */}
+        <div className="flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-6 pb-3 pt-5">
           <div>
-            <h1 className="text-2xl font-bold leading-tight text-gray-900">Inbox</h1>
-            <p className="mt-1 text-sm text-gray-500">
+            <h1 className="text-xl font-bold leading-tight text-gray-900">Inbox</h1>
+            <p className="text-xs text-gray-500">
               {stats ? `${stats.open_count} bericht${stats?.open_count === 1 ? '' : 'en'} wachten op actie` : 'Laden…'}
             </p>
           </div>
@@ -105,7 +119,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
               <button
                 onClick={onCompose}
                 title="Nieuw bericht (n)"
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
               >
                 <i className="fa-solid fa-pen-to-square" />Nieuw bericht
               </button>
@@ -113,7 +127,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
             <button
               onClick={handleSync}
               disabled={syncAll.isPending}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <i className={`fa-solid fa-arrows-rotate ${syncAll.isPending ? 'animate-spin' : ''}`} />
               {syncAll.isPending ? 'Synchroniseren…' : 'Nieuwe check'}
@@ -121,64 +135,52 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
           </div>
         </div>
 
-        {/* Metric pills (compact) */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <MetricPill
-            label="Open"
-            value={stats?.open_count || 0}
-            color="text-blue-700 bg-blue-50 border-blue-200"
-            active={statusFilter === null}
-            onClick={() => setStatusFilter(null)}
-          />
-          <MetricPill
-            label="Snoozed"
-            value={stats?.snoozed_count || 0}
-            color="text-orange-700 bg-orange-50 border-orange-200"
-            active={false}
-            onClick={() => onNavigate?.('snoozed')}
-          />
-          <MetricPill
-            label="Vandaag afgehandeld"
-            value={stats?.done_today || 0}
-            color="text-green-700 bg-green-50 border-green-200"
-            active={false}
-            onClick={() => onNavigate?.('logboek')}
-          />
-          <MetricPill
-            label="Urgent"
-            value={stats?.urgent_count || 0}
-            color="text-red-700 bg-red-50 border-red-200"
-            active={statusFilter === 'urgent'}
-            onClick={() => handleStatusFilter('urgent')}
-            hide={!stats?.urgent_count}
+        {/* Filters + zoek — compact rij */}
+        <div className="border-b border-gray-200 bg-white px-6 py-3">
+          <MessageFilters
+            channelFilter={channelFilter}
+            onChannelFilter={setChannelFilter}
+            search={search}
+            onSearch={setSearch}
           />
         </div>
 
-        <MessageFilters
-          channelFilter={channelFilter}
-          onChannelFilter={setChannelFilter}
-          search={search}
-          onSearch={setSearch}
-        />
-      </div>
-
-      {/* Lijst + agenda */}
-      <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
-        <div className="mx-8 mt-4">
-          <DailySummaryCard />
+        {/* Mobile-only metric pills fallback (<lg) */}
+        <div className="border-b border-gray-200 bg-white px-6 py-2 lg:hidden">
+          <div className="flex flex-wrap items-center gap-2">
+            <MetricPillMini
+              label="Open"
+              value={stats?.open_count}
+              color="text-blue-700 bg-blue-50 border-blue-200"
+              active={statusFilter === null}
+              onClick={() => setStatusFilter(null)}
+            />
+            <MetricPillMini
+              label="Snoozed"
+              value={stats?.snoozed_count}
+              color="text-orange-700 bg-orange-50 border-orange-200"
+              onClick={() => onNavigate?.('snoozed')}
+            />
+            <MetricPillMini
+              label="Vandaag afgehandeld"
+              value={stats?.done_today}
+              color="text-green-700 bg-green-50 border-green-200"
+              onClick={() => onNavigate?.('logboek')}
+            />
+            <MetricPillMini
+              label="Urgent"
+              value={stats?.urgent_count}
+              color="text-red-700 bg-red-50 border-red-200"
+              active={statusFilter === 'urgent'}
+              onClick={() => handleStatusFilter('urgent')}
+              hide={!stats?.urgent_count}
+            />
+          </div>
         </div>
 
-        {/* 2-kolom op lg+, gestapeld op kleiner scherm (agenda boven berichten) */}
-        <div className="mx-8 mb-8 flex flex-col gap-6 lg:flex-row">
-          {/* Agenda kolom (rechts op lg, boven op mobile) */}
-          <aside className="order-1 lg:order-2 lg:w-[340px] lg:shrink-0">
-            <div className="lg:sticky lg:top-2">
-              <AgendaWidget onNavigate={onNavigate} onOpenContact={onOpenContact} />
-            </div>
-          </aside>
-
-          {/* Berichten kolom */}
-          <div className="order-2 min-w-0 flex-1 space-y-4 lg:order-1">
+        {/* Berichten lijst */}
+        <div className="flex-1 overflow-y-auto bg-gray-50 scrollbar-thin">
+          <div className="mx-6 my-4 space-y-4">
             {pinned.length > 0 ? (
               <div>
                 <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-700">
@@ -257,24 +259,71 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
               )}
             </div>
           </div>
+
+          <BulkActionBar
+            count={selection.count}
+            onSnooze={() => onBulkSnooze?.([...selection.selectedIds])}
+            onDone={() => onBulkDone?.([...selection.selectedIds])}
+            onArchive={async () => {
+              const ids = [...selection.selectedIds];
+              const ok = await onBulkArchive?.(ids);
+              if (ok !== false) selection.clear();
+            }}
+            onBlock={async () => {
+              const ok = await onBulkBlock?.([...selection.selectedIds], selectedMessages);
+              if (ok !== false) selection.clear();
+            }}
+            onClear={selection.clear}
+          />
+        </div>
+      </div>
+
+      {/* RECHTER KOLOM: metrics + agenda */}
+      <aside className="hidden w-[320px] shrink-0 flex-col overflow-y-auto border-l border-gray-200 bg-gray-50/60 scrollbar-thin lg:flex">
+        <div className="space-y-1 px-4 pb-3 pt-5">
+          <div className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+            Overzicht
+          </div>
+          <MetricRow
+            label="Open"
+            value={stats?.open_count}
+            icon="fa-inbox"
+            color="text-blue-600"
+            onClick={() => setStatusFilter(null)}
+            active={statusFilter === null}
+          />
+          <MetricRow
+            label="Snoozed"
+            value={stats?.snoozed_count}
+            icon="fa-clock"
+            color="text-orange-600"
+            onClick={() => onNavigate?.('snoozed')}
+          />
+          <MetricRow
+            label="Vandaag afgehandeld"
+            value={stats?.done_today}
+            icon="fa-circle-check"
+            color="text-green-600"
+            onClick={() => onNavigate?.('logboek')}
+          />
+          {stats?.urgent_count > 0 ? (
+            <MetricRow
+              label="Urgent"
+              value={stats?.urgent_count}
+              icon="fa-circle-exclamation"
+              color="text-red-600"
+              onClick={() => handleStatusFilter('urgent')}
+              active={statusFilter === 'urgent'}
+            />
+          ) : null}
         </div>
 
-        <BulkActionBar
-          count={selection.count}
-          onSnooze={() => onBulkSnooze?.([...selection.selectedIds])}
-          onDone={() => onBulkDone?.([...selection.selectedIds])}
-          onArchive={async () => {
-            const ids = [...selection.selectedIds];
-            const ok = await onBulkArchive?.(ids);
-            if (ok !== false) selection.clear();
-          }}
-          onBlock={async () => {
-            const ok = await onBulkBlock?.([...selection.selectedIds], selectedMessages);
-            if (ok !== false) selection.clear();
-          }}
-          onClear={selection.clear}
-        />
-      </div>
+        <div className="border-t border-gray-200" />
+
+        <div className="p-4">
+          <AgendaWidget onNavigate={onNavigate} onOpenContact={onOpenContact} />
+        </div>
+      </aside>
     </div>
   );
 }
