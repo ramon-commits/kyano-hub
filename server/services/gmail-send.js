@@ -32,8 +32,21 @@ function escapeHtmlForFallback(text) {
     .replace(/\n/g, '<br>');
 }
 
-function buildMime({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReplyTo, references }) {
-  const boundary = makeBoundary();
+// Encode een Buffer naar base64 in 76-char regels, zoals vereist door RFC 2045.
+function encodeBase64Body(buffer) {
+  return buffer.toString('base64').replace(/(.{76})/g, '$1\r\n').trim();
+}
+
+// Escape doublequotes en CR/LF in MIME-header parameter waarden (filenames).
+function escapeMimeParam(value) {
+  return (value || '').replace(/[\r\n"]/g, '_');
+}
+
+function buildMime({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReplyTo, references, attachments }) {
+  const innerBoundary = makeBoundary('alt');
+  const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+  const outerBoundary = hasAttachments ? makeBoundary('mix') : null;
+
   const headers = [];
   headers.push(`Date: ${rfc2822Date()}`);
   headers.push(`From: ${encodeHeader(from)}`);
@@ -44,30 +57,63 @@ function buildMime({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReplyTo, 
   headers.push('MIME-Version: 1.0');
   if (inReplyTo) headers.push(`In-Reply-To: ${inReplyTo}`);
   if (references) headers.push(`References: ${references}`);
-  headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+  if (hasAttachments) {
+    headers.push(`Content-Type: multipart/mixed; boundary="${outerBoundary}"`);
+  } else {
+    headers.push(`Content-Type: multipart/alternative; boundary="${innerBoundary}"`);
+  }
 
   const plain = bodyText || (bodyHtml ? bodyHtml.replace(/<[^>]+>/g, '').trim() : '');
   const html = bodyHtml || `<div>${escapeHtmlForFallback(plain)}</div>`;
 
-  const parts = [
-    '',
-    `--${boundary}`,
+  // multipart/alternative met de tekst- en HTML-versie van de body
+  const altPart = [
+    `--${innerBoundary}`,
     'Content-Type: text/plain; charset="UTF-8"',
     'Content-Transfer-Encoding: 7bit',
     '',
     plain,
     '',
-    `--${boundary}`,
+    `--${innerBoundary}`,
     'Content-Type: text/html; charset="UTF-8"',
     'Content-Transfer-Encoding: 7bit',
     '',
     html,
     '',
-    `--${boundary}--`,
+    `--${innerBoundary}--`,
+  ].join('\r\n');
+
+  if (!hasAttachments) {
+    return headers.join('\r\n') + '\r\n\r\n' + altPart + '\r\n';
+  }
+
+  // multipart/mixed: het alternative-blok als eerste part, dan elke bijlage
+  const mixedHead = [
+    `--${outerBoundary}`,
+    `Content-Type: multipart/alternative; boundary="${innerBoundary}"`,
+    '',
+    altPart,
     '',
   ].join('\r\n');
 
-  return headers.join('\r\n') + '\r\n' + parts;
+  const attachmentBlocks = attachments.map((att) => {
+    const filename = escapeMimeParam(att.filename || 'bestand');
+    const mime = att.mimeType || 'application/octet-stream';
+    const body = encodeBase64Body(att.content);
+    return [
+      `--${outerBoundary}`,
+      `Content-Type: ${mime}; name="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${filename}"`,
+      '',
+      body,
+      '',
+    ].join('\r\n');
+  });
+
+  const closing = `--${outerBoundary}--\r\n`;
+
+  return headers.join('\r\n') + '\r\n\r\n' + mixedHead + attachmentBlocks.join('') + closing;
 }
 
 function encodeBase64Url(input) {
@@ -91,7 +137,7 @@ async function getAccountFrom(client, channelId) {
   return { name: data.name, email: data.email };
 }
 
-export async function sendReply(channelId, { threadId, to, cc, bcc, subject, bodyHtml, bodyText, inReplyTo, references }) {
+export async function sendReply(channelId, { threadId, to, cc, bcc, subject, bodyHtml, bodyText, inReplyTo, references, attachments }) {
   const client = getClient(channelId);
   if (!client) throw new Error(`Channel ${channelId} is not connected`);
 
@@ -108,6 +154,7 @@ export async function sendReply(channelId, { threadId, to, cc, bcc, subject, bod
     bodyHtml,
     inReplyTo,
     references,
+    attachments,
   });
 
   const gmail = google.gmail({ version: 'v1', auth: client });
@@ -122,8 +169,8 @@ export async function sendReply(channelId, { threadId, to, cc, bcc, subject, bod
   return { messageId: data.id, threadId: data.threadId, labelIds: data.labelIds || [], fromEmail: me.email };
 }
 
-export async function sendNew(channelId, { to, cc, bcc, subject, bodyHtml, bodyText }) {
-  return sendReply(channelId, { threadId: null, to, cc, bcc, subject, bodyHtml, bodyText, inReplyTo: null, references: null });
+export async function sendNew(channelId, { to, cc, bcc, subject, bodyHtml, bodyText, attachments }) {
+  return sendReply(channelId, { threadId: null, to, cc, bcc, subject, bodyHtml, bodyText, inReplyTo: null, references: null, attachments });
 }
 
 export async function createDraft(channelId, { threadId, to, cc, bcc, subject, bodyHtml, bodyText, inReplyTo, references }) {

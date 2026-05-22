@@ -773,6 +773,10 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
   }
 });
 
+// Gmail send heeft een raw-message limiet (~35MB inclusief base64-overhead);
+// houd 25MB aan netto-payload aan als veilige marge.
+const FORWARD_MAX_TOTAL_BYTES = 25 * 1024 * 1024;
+
 // POST /api/messages/:id/forward — stuur een email door
 router.post('/:id/forward', async (req, res, next) => {
   try {
@@ -829,6 +833,47 @@ router.post('/:id/forward', async (req, res, next) => {
       </blockquote>
     `.trim();
 
+    // Bijlagen downloaden uit Gmail en meesturen in de doorgestuurde mail
+    const attachmentMeta = parseForwardAttachments(original.attachments_json);
+    const downloadedAttachments = [];
+    let totalBytes = 0;
+    if (attachmentMeta.length) {
+      if (!original.external_id) {
+        return res.status(400).json({ error: 'Origineel bericht heeft geen Gmail message-id — bijlagen niet ophaalbaar' });
+      }
+      const client = getClient(original.channel_id);
+      if (!client) {
+        return res.status(400).json({ error: 'Email-kanaal niet verbonden — bijlagen niet ophaalbaar' });
+      }
+      const gmail = google.gmail({ version: 'v1', auth: client });
+      for (const att of attachmentMeta) {
+        try {
+          const { data } = await gmail.users.messages.attachments.get({
+            userId: 'me',
+            messageId: original.external_id,
+            id: att.id,
+          });
+          if (!data?.data) continue;
+          const buffer = Buffer.from(data.data, 'base64url');
+          totalBytes += buffer.length;
+          if (totalBytes > FORWARD_MAX_TOTAL_BYTES) {
+            return res.status(413).json({
+              error: `Bijlagen samen groter dan ${Math.round(FORWARD_MAX_TOTAL_BYTES / (1024 * 1024))}MB — Gmail limiet`,
+            });
+          }
+          downloadedAttachments.push({
+            content: buffer,
+            filename: att.filename || 'bestand',
+            mimeType: att.mimeType || 'application/octet-stream',
+            size: buffer.length,
+          });
+        } catch (err) {
+          console.error(`forward: kon bijlage ${att.filename} niet downloaden:`, err.message);
+          return res.status(502).json({ error: `Bijlage ${att.filename || ''} ophalen mislukt: ${err.message}` });
+        }
+      }
+    }
+
     const result = await sendNew(original.channel_id, {
       to: to.trim(),
       cc: cc || null,
@@ -836,17 +881,24 @@ router.post('/:id/forward', async (req, res, next) => {
       subject: forwardSubject,
       bodyHtml,
       bodyText,
+      attachments: downloadedAttachments.length ? downloadedAttachments : undefined,
     });
 
-    // Lokaal opslaan als outbound
+    // Lokaal opslaan als outbound met genormaliseerde attachments-metadata
     const localId = uuid();
+    const localAttachments = downloadedAttachments.map((att, idx) => ({
+      id: `fwd-${idx}-${Date.now()}`,
+      filename: att.filename,
+      mimeType: att.mimeType,
+      size: att.size,
+    }));
     db.prepare(`
       INSERT OR IGNORE INTO messages (
         id, external_id, channel_id, contact_id, direction, subject, snippet,
-        body_html, body_text, thread_id, status, priority, received_at
+        body_html, body_text, thread_id, status, priority, received_at, attachments_json
       ) VALUES (
         @id, @external_id, @channel_id, @contact_id, 'outbound', @subject, @snippet,
-        @body_html, @body_text, @thread_id, 'archived', 'medium', @received_at
+        @body_html, @body_text, @thread_id, 'archived', 'medium', @received_at, @attachments_json
       )
     `).run({
       id: localId,
@@ -859,6 +911,7 @@ router.post('/:id/forward', async (req, res, next) => {
       body_text: bodyText,
       thread_id: result.threadId || null,
       received_at: new Date().toISOString(),
+      attachments_json: localAttachments.length ? JSON.stringify(localAttachments) : null,
     });
 
     logInteraction(req.params.id, 'replied', `Doorgestuurd naar ${to}`, 'sent');
@@ -869,10 +922,28 @@ router.post('/:id/forward', async (req, res, next) => {
       gmail_message_id: result.messageId,
       from: result.fromEmail,
       to: to.trim(),
+      attachments: localAttachments.length,
       original_id: req.params.id,
     });
   } catch (e) { next(e); }
 });
+
+function parseForwardAttachments(attachmentsJson) {
+  if (!attachmentsJson) return [];
+  try {
+    const list = JSON.parse(attachmentsJson);
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((a) => a && a.id)
+      .map((a) => ({
+        id: a.id,
+        filename: a.filename || a.file_name || 'bestand',
+        mimeType: a.mimeType || a.mime || 'application/octet-stream',
+      }));
+  } catch {
+    return [];
+  }
+}
 
 function escapeHtmlForForward(s) {
   return (s || '')

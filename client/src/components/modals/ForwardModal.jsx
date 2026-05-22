@@ -75,7 +75,8 @@ export default function ForwardModal({ open, onClose, message }) {
         bcc: bcc.trim() || null,
         extra_text: extraText || null,
       });
-      toast.success(`Doorgestuurd naar ${r.to}`, 'Verstuurd');
+      const attLabel = r.attachments ? ` + ${r.attachments} bijlage${r.attachments === 1 ? '' : 'n'}` : '';
+      toast.success(`Doorgestuurd naar ${r.to}${attLabel}`, 'Verstuurd');
       onClose?.();
     } catch (e) {
       if (e.status === 400) toast.error(e.message);
