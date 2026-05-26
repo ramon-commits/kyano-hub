@@ -1,3 +1,9 @@
+// Laad .env VÓÓR ensureKey() draait — anders genereert een dynamic import
+// (bijv. smoke-test of CLI script dat routes/services rechtstreeks importeert)
+// onterecht een nieuwe key en overschrijft de bestaande, waardoor alle reeds-
+// encrypted tokens onleesbaar worden. server/index.js doet dit ook, maar deze
+// import zorgt dat het ELKE codepath via encryption.js dekt.
+import '../env.js';
 import crypto from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
