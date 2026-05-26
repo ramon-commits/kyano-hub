@@ -242,11 +242,11 @@ function persistMessage(channel, msg) {
     return { inserted: false, message_id: null, contact_id: contactId };
   }
 
-  // Auto-wake: alleen 'waiting' berichten (status "wacht op reactie") worden gewekt door
-  // een nieuwe inbound reply. 'Snoozed' berichten zijn BEWUST door de gebruiker uitgesteld
-  // tot een specifieke tijd — die worden alleen door de snooze-cron gewekt.
+  // Auto-wake: alleen bij ECHTE nieuwe inbound insert (geen re-sync/label-change),
+  // en alleen 'waiting' berichten (status "wacht op reactie"). 'Snoozed' is BEWUST
+  // door de gebruiker uitgesteld tot een tijdstip — die wekt alleen de snooze-cron.
   let woken = 0;
-  if (!isOutbound && contactId) {
+  if (result.changes > 0 && !isOutbound && contactId) {
     const wakeResult = db.prepare(`
       UPDATE messages SET status = 'open', snoozed_until = NULL, updated_at = datetime('now')
       WHERE contact_id = ? AND status = 'waiting' AND id != ?

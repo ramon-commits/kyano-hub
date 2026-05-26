@@ -262,6 +262,7 @@ export default function App() {
 
   // Toast na een succesvol verzonden reply. Backend heeft het originele bericht al auto-done gezet —
   // de toast biedt "Houd open" als undo zodat de user het bericht weer in de inbox krijgt.
+  // En: advance naar het volgende bericht zodat triage flow doorloopt na een reply.
   const onReplySent = ({ from, channelLabel, originalId, originalDone }) => {
     const sentVia = from || channelLabel || 'het kanaal';
     if (originalDone && originalId) {
@@ -281,6 +282,7 @@ export default function App() {
     } else {
       toast.success(`Verzonden via ${sentVia}`, 'Verstuurd');
     }
+    if (originalId && selectedMessageId === originalId) advanceSelection(originalId);
   };
 
   const onUrgent = async (m) => {

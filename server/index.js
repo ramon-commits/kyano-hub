@@ -81,6 +81,40 @@ app.use(errorHandler);
 // Boot
 seed();
 cleanupDemoData();
+
+// One-shot cleanup: berichten die door de oude auto-wake bug (zie commit f4ae0ee)
+// onterecht teruggezet zijn naar 'open' terwijl ze meerdere keren afgehandeld zijn.
+// Heuristiek: status='open' + minstens 2 done/snoozed/archived logs → bug-slachtoffer.
+// Marker in app_config voorkomt dat dit een legitieme reopen squasht bij volgende restart.
+(function fixAutoWakeBugVictims() {
+  const MARKER_KEY = 'autowake_cleanup_v1';
+  const seen = db.prepare('SELECT value FROM app_config WHERE key = ?').get(MARKER_KEY);
+  if (seen) return;
+
+  const rows = db.prepare(`
+    SELECT m.id,
+      (SELECT COUNT(*) FROM interaction_logs il
+        WHERE il.message_id = m.id AND il.action IN ('done', 'snoozed', 'archived')) AS times_handled
+    FROM messages m
+    WHERE m.status = 'open'
+  `).all().filter((r) => r.times_handled >= 2);
+
+  if (rows.length) {
+    const fix = db.prepare(`
+      UPDATE messages SET
+        status = 'done', done_at = datetime('now'),
+        done_category = 'replied',
+        done_note = 'Auto-fixed: onterecht heropend door auto-wake bug',
+        updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    const tx = db.transaction(() => { for (const r of rows) fix.run(r.id); });
+    tx();
+    console.log(`🧹 ${rows.length} bericht(en) hersteld: waren door de auto-wake bug onterecht heropend → terug op done`);
+  }
+  db.prepare('INSERT INTO app_config (key, value) VALUES (?, ?)').run(MARKER_KEY, new Date().toISOString());
+})();
+
 startSnoozeCron();
 startPoller();
 startPurgeCron();

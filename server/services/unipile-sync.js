@@ -322,10 +322,9 @@ function persistUnipileMessage(channel, chat, msg, attendeeMap) {
     return { inserted: false };
   }
 
-  // Auto-wake: alleen 'waiting' berichten worden gewekt door een nieuwe inbound reply.
-  // 'Snoozed' berichten zijn bewust uitgesteld door de gebruiker en blijven snoozed tot
-  // de cron ze wakker maakt op het ingestelde tijdstip.
-  if (!out && contactId) {
+  // Auto-wake: alleen bij ECHTE nieuwe insert + alleen 'waiting' berichten. Snoozed
+  // berichten zijn bewust uitgesteld door de gebruiker en worden alleen door de cron gewekt.
+  if (r.changes > 0 && !out && contactId) {
     const wake = db.prepare(`
       UPDATE messages SET status = 'open', snoozed_until = NULL, updated_at = datetime('now')
       WHERE contact_id = ? AND status = 'waiting' AND id != ?
