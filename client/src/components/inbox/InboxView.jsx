@@ -38,7 +38,7 @@ function MetricPillMini({ label, value, color, active, onClick, hide }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onForward, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onCompose, selectedId, onMessagesChange }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onForward, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onCompose, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(50);
@@ -73,12 +73,6 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
     () => allMessages.filter((m) => !m.thread_id || !pinnedThreadIds.has(m.thread_id)),
     [allMessages, pinnedThreadIds],
   );
-
-  // Geef App de volgorde van de inbox door zodat keyboard-acties auto-advancen naar het volgende bericht
-  useEffect(() => {
-    if (!onMessagesChange) return;
-    onMessagesChange([...pinned.map((m) => m.id), ...messages.map((m) => m.id)]);
-  }, [pinned, messages, onMessagesChange]);
 
   const selection = useSelection(messages);
   useSelectionShortcuts({

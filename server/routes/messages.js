@@ -169,6 +169,63 @@ router.get('/', (req, res) => {
   res.json({ messages: rows, total, limit, offset });
 });
 
+// GET /api/messages/next-in-inbox
+// Bepaalt het volgende bericht voor de triage-flow. De database is altijd up-to-date;
+// dit voorkomt de timing-bug waar advanceSelection op een stale frontend-lijst draait
+// nadat de inbox query is afgekoppeld (InboxView is unmounted tijdens ConversationView).
+//
+// Query params:
+//   - exclude: comma-separated message-IDs die de frontend recent heeft afgehandeld
+//     (skip-list voor race condities tussen mutation-commit en deze call)
+//   - exclude_threads: comma-separated thread_keys (thread_id of msg_id voor threadloze).
+//     Sluit hele threads uit — handig om niet steeds bij dezelfde gesprek te blijven hangen.
+// Response: { next_id: string|null, remaining: number }
+router.get('/next-in-inbox', (req, res) => {
+  const excludeIds = String(req.query.exclude || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const excludeThreadKeys = String(req.query.exclude_threads || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+  const params = {};
+  const conds = ["m.status = 'open'"];
+  if (excludeIds.length) {
+    const ph = excludeIds.map((_, i) => `@ex${i}`).join(',');
+    conds.push(`m.id NOT IN (${ph})`);
+    excludeIds.forEach((id, i) => { params[`ex${i}`] = id; });
+  }
+  if (excludeThreadKeys.length) {
+    const ph = excludeThreadKeys.map((_, i) => `@tk${i}`).join(',');
+    conds.push(`COALESCE(m.thread_id, m.id) NOT IN (${ph})`);
+    excludeThreadKeys.forEach((tk, i) => { params[`tk${i}`] = tk; });
+  }
+  const where = `WHERE ${conds.join(' AND ')}`;
+
+  const latestSql = `
+    SELECT
+      m.id AS latest_id,
+      m.received_at AS latest_received_at,
+      COALESCE(m.thread_id, m.id) AS thread_key,
+      ROW_NUMBER() OVER (
+        PARTITION BY COALESCE(m.thread_id, m.id)
+        ORDER BY m.received_at DESC
+      ) AS rn
+    FROM messages m
+    ${where}
+  `;
+  const rows = db.prepare(`
+    SELECT latest_id, thread_key
+    FROM (${latestSql})
+    WHERE rn = 1
+    ORDER BY latest_received_at DESC
+    LIMIT 1
+  `).all(params);
+
+  const remaining = db.prepare(`
+    SELECT COUNT(DISTINCT COALESCE(thread_id, id)) AS c
+    FROM messages WHERE status = 'open'
+  `).get().c;
+
+  res.json({ next_id: rows[0]?.latest_id || null, remaining });
+});
+
 // GET /api/messages/pinned — vastgezette gesprekken (1 row per thread, met laatste bericht)
 router.get('/pinned', (req, res) => {
   const rows = db.prepare(`

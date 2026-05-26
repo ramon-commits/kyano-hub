@@ -51,33 +51,31 @@ export default function App() {
   const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [selectedContactId, setSelectedContactId] = useState(null);
 
-  // Volgorde van zichtbare berichten in de huidige lijst-view (Inbox/Snoozed) — voor auto-advance
-  const messageOrderRef = useRef([]);
-  const handleMessagesChange = useCallback((ids) => { messageOrderRef.current = ids || []; }, []);
-
-  // Skip-list: berichten die net zijn afgehandeld maar nog in messageOrderRef staan omdat
-  // de query nog niet ge-refetched is. Voorkomt dat we terugspringen naar het zojuist
-  // afgehandelde bericht in de Superhuman-style triage flow.
+  // Skip-list: net afgehandelde berichten. Server-side next-in-inbox excludeert deze
+  // zodat een race tussen mutation-commit en de next-call nooit terug pingelt naar het
+  // zojuist afgehandelde bericht. 30s cleanup is ruim genoeg voor commit-propagatie.
   const handledIdsRef = useRef(new Set());
+  // Epoch zodat concurrente advance-calls (snelle 'f f f') niet stale responses toepassen.
+  const advanceEpochRef = useRef(0);
   const toastRef = useRef(null);
 
-  const advanceSelection = useCallback((currentId) => {
+  const advanceSelection = useCallback(async (currentId) => {
     handledIdsRef.current.add(currentId);
+    const epoch = ++advanceEpochRef.current;
 
-    const list = messageOrderRef.current || [];
-    const currentIndex = list.indexOf(currentId);
-
+    // De database is de waarheid: vraag de server welk bericht nu bovenaan de open inbox staat.
+    // Dit vervangt de oude messageOrderRef-aanpak die stale werd zodra InboxView unmounte tijdens
+    // ConversationView (geen refetch, dus de lijst kon naar al-afgehandelde berichten teruglopen).
+    const exclude = encodeURIComponent([...handledIdsRef.current].join(','));
     let nextId = null;
-    // Zoek vooruit naar het eerste bericht dat nog niet is afgehandeld
-    const startIndex = currentIndex === -1 ? 0 : currentIndex + 1;
-    for (let i = startIndex; i < list.length; i++) {
-      if (!handledIdsRef.current.has(list[i])) { nextId = list[i]; break; }
-    }
-    // Geen vooruit gevonden? Zoek achteruit
-    if (!nextId && currentIndex > 0) {
-      for (let i = currentIndex - 1; i >= 0; i--) {
-        if (!handledIdsRef.current.has(list[i])) { nextId = list[i]; break; }
-      }
+    try {
+      const r = await api.get(`/messages/next-in-inbox?exclude=${exclude}`);
+      // Concurrent advance? Negeer dit antwoord — een latere call heeft voorrang.
+      if (advanceEpochRef.current !== epoch) return;
+      nextId = r.next_id;
+    } catch (e) {
+      toastRef.current?.error(e.message || 'Volgende bericht ophalen mislukt');
+      return;
     }
 
     if (nextId) {
@@ -87,8 +85,7 @@ export default function App() {
       toastRef.current?.success('Inbox afgewerkt!');
     }
 
-    // Clean-up na 5s — voorkomt geheugenlek en zorgt dat heropende berichten weer mee tellen
-    setTimeout(() => { handledIdsRef.current.delete(currentId); }, 5000);
+    setTimeout(() => { handledIdsRef.current.delete(currentId); }, 30000);
   }, []);
 
   const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null, bulkIds: null });
@@ -501,7 +498,6 @@ export default function App() {
             onForward={handleForward}
             onCompose={() => setComposeOpen(true)}
             selectedId={selectedMessageId}
-            onMessagesChange={handleMessagesChange}
           />
         );
       case 'snoozed':
