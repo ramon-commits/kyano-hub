@@ -612,18 +612,10 @@ router.post('/:id/reply', async (req, res, next) => {
           received_at: new Date().toISOString(),
         });
 
-        // Auto-done op alle open berichten in dezelfde thread (UI biedt "Houd open" undo)
+        // GEEN auto-done — gesprek blijft open zodat Ramon nog een vervolg kan sturen.
+        // Wel: extern markeren als gelezen + interaction-log voor training data.
         const threadOpenIds = openIdsInThread(req.params.id);
-        const upStmt = db.prepare(`
-          UPDATE messages SET
-            status = 'done', done_at = datetime('now'),
-            done_category = 'replied', done_note = 'Beantwoord via Comm Hub',
-            updated_at = datetime('now')
-          WHERE id = ? AND status = 'open'
-        `);
-        let autoDoneCount = 0;
         for (const tid of threadOpenIds) {
-          autoDoneCount += upStmt.run(tid).changes;
           logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
         }
         markExternalReadBulk(threadOpenIds);
@@ -633,8 +625,8 @@ router.post('/:id/reply', async (req, res, next) => {
           message_id: localId,
           channel_type: original.channel_type,
           original_id: req.params.id,
-          original_done: autoDoneCount > 0,
-          thread_done_count: autoDoneCount,
+          original_done: false,
+          thread_done_count: 0,
         });
       } catch (e) {
         return res.status(500).json({ error: e.message, deep_link: original.deep_link });
@@ -690,22 +682,12 @@ router.post('/:id/reply', async (req, res, next) => {
       received_at: new Date().toISOString(),
     });
 
-    // Auto-done op alle open berichten in dezelfde thread (UI biedt "Houd open" undo)
+    // GEEN auto-done — gesprek blijft open na reply. Wel: extern markeren als gelezen
+    // en interaction-log voor training data.
     const threadOpenIds = openIdsInThread(req.params.id);
-    const upStmt = db.prepare(`
-      UPDATE messages SET
-        status = 'done', done_at = datetime('now'),
-        done_category = 'replied', done_note = 'Beantwoord via Comm Hub',
-        updated_at = datetime('now')
-      WHERE id = ? AND status = 'open'
-    `);
-    let autoDoneCount = 0;
     for (const tid of threadOpenIds) {
-      autoDoneCount += upStmt.run(tid).changes;
       logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
     }
-
-    // Best-effort mark-as-read in het externe kanaal (Gmail/Unipile) voor de hele thread
     if (threadOpenIds.length) {
       markExternalReadBulk(threadOpenIds);
     } else if (original.external_id) {
@@ -719,8 +701,8 @@ router.post('/:id/reply', async (req, res, next) => {
       thread_id: result.threadId,
       from: result.fromEmail,
       original_id: req.params.id,
-      original_done: autoDoneCount > 0,
-      thread_done_count: autoDoneCount,
+      original_done: false,
+      thread_done_count: 0,
     });
   } catch (e) { next(e); }
 });
@@ -798,18 +780,9 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
       attachments_json: JSON.stringify(localAttachments),
     });
 
-    // Auto-done op alle open berichten in dezelfde thread
+    // GEEN auto-done — gesprek blijft open na reply (ook met bijlagen). Wel: log + mark-read.
     const threadOpenIds = openIdsInThread(req.params.id);
-    const upStmt = db.prepare(`
-      UPDATE messages SET
-        status = 'done', done_at = datetime('now'),
-        done_category = 'replied', done_note = 'Beantwoord via Comm Hub',
-        updated_at = datetime('now')
-      WHERE id = ? AND status = 'open'
-    `);
-    let autoDoneCount = 0;
     for (const tid of threadOpenIds) {
-      autoDoneCount += upStmt.run(tid).changes;
       logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
     }
     markExternalReadBulk(threadOpenIds);
@@ -820,8 +793,8 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
       channel_type: original.channel_type,
       attachments: localAttachments.length,
       original_id: req.params.id,
-      original_done: autoDoneCount > 0,
-      thread_done_count: autoDoneCount,
+      original_done: false,
+      thread_done_count: 0,
     });
   } catch (e) {
     if (e?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Bestand groter dan 10MB' });

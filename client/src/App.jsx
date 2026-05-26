@@ -16,7 +16,6 @@ import ConversationView from './components/conversation/ConversationView.jsx';
 import ContactDetail from './components/contacts/ContactDetail.jsx';
 import WelcomeScreen from './components/welcome/WelcomeScreen.jsx';
 import SnoozeModal from './components/modals/SnoozeModal.jsx';
-import DoneModal from './components/modals/DoneModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
 import ForwardModal from './components/modals/ForwardModal.jsx';
 import ComposeModal from './components/modals/ComposeModal.jsx';
@@ -89,7 +88,6 @@ export default function App() {
   }, []);
 
   const [snoozeModal, setSnoozeModal] = useState({ open: false, message: null, bulkIds: null });
-  const [doneModal, setDoneModal] = useState({ open: false, message: null, bulkIds: null });
   const [scheduleModal, setScheduleModal] = useState({ open: false, contact: null, message: null });
   const [forwardModal, setForwardModal] = useState({ open: false, message: null });
   const [cmdkOpen, setCmdkOpen] = useState(false);
@@ -152,18 +150,30 @@ export default function App() {
   const closeContact = useCallback(() => setSelectedContactId(null), []);
 
   const handleSnooze = (m) => setSnoozeModal({ open: true, message: m, bulkIds: null });
-  const handleDone = (m) => setDoneModal({ open: true, message: m, bulkIds: null });
+  // Afhandelen is altijd direct: één klik = done + door naar volgende. Geen categorie-keuze.
+  // Notitie toevoegen kan later via het logboek als Ramon dat ooit nodig heeft.
   const handleFastDone = async (m) => {
+    const id = m.id || m.latest_message_id;
     try {
-      await doneMut.mutateAsync({ id: m.id, category: 'replied', note: null });
-      toast.success('Afgevinkt', null, { action: undoAction([m.id]) });
-      if (selectedMessageId === m.id) advanceSelection(m.id);
+      await doneMut.mutateAsync({ id, category: 'replied', note: null });
+      toast.success('Afgehandeld', null, { action: undoAction([id]) });
+      if (selectedMessageId === id) advanceSelection(id);
     } catch (e) {
-      toast.error(e.message || 'Afvinken mislukt');
+      toast.error(e.message || 'Afhandelen mislukt');
     }
   };
+  // handleDone is identiek aan handleFastDone — geen modal, geen extra keuze.
+  const handleDone = handleFastDone;
   const handleBulkSnooze = (ids) => setSnoozeModal({ open: true, message: null, bulkIds: ids });
-  const handleBulkDone = (ids) => setDoneModal({ open: true, message: null, bulkIds: ids });
+  const handleBulkDone = async (ids) => {
+    if (!ids?.length) return;
+    try {
+      const r = await bulkDoneMut.mutateAsync({ ids, note: null, category: 'replied' });
+      toast.success(`${r.updated} berichten afgehandeld`, 'Afgehandeld', { action: undoAction(ids) });
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
   const handleSchedule = (target) => {
     // target kan een message of contact zijn
     const isContact = target && !('channel_id' in target);
@@ -208,23 +218,6 @@ export default function App() {
     }
   };
 
-  const onDone = async ({ category, note }) => {
-    const { message: msg, bulkIds } = doneModal;
-    setDoneModal({ open: false, message: null, bulkIds: null });
-    try {
-      if (bulkIds && bulkIds.length) {
-        const r = await bulkDoneMut.mutateAsync({ ids: bulkIds, note, category });
-        toast.success(`${r.updated} berichten in je logboek`, 'Afgehandeld', { action: undoAction(bulkIds) });
-      } else if (msg) {
-        await doneMut.mutateAsync({ id: msg.id, category, note });
-        toast.success('Staat in je logboek', 'Afgehandeld', { action: undoAction([msg.id]) });
-        if (selectedMessageId === msg.id) advanceSelection(msg.id);
-      }
-    } catch (e) {
-      toast.error(e.message);
-    }
-  };
-
   const onBulkArchive = async (ids) => {
     if (!ids?.length) return false;
     try {
@@ -257,29 +250,12 @@ export default function App() {
     }
   };
 
-  // Toast na een succesvol verzonden reply. Backend heeft het originele bericht al auto-done gezet —
-  // de toast biedt "Houd open" als undo zodat de user het bericht weer in de inbox krijgt.
-  // En: advance naar het volgende bericht zodat triage flow doorloopt na een reply.
-  const onReplySent = ({ from, channelLabel, originalId, originalDone }) => {
+  // Na een reply: gesprek blijft OPEN. Geen advance, geen auto-done — Ramon kan nog
+  // een vervolg sturen. Wel een korte toast. De thread-query wordt door useReplyMessage
+  // ge-invalidate, dus de zojuist verstuurde reply verschijnt vanzelf in de view.
+  const onReplySent = ({ from, channelLabel }) => {
     const sentVia = from || channelLabel || 'het kanaal';
-    if (originalDone && originalId) {
-      toast.success(`Verzonden via ${sentVia}`, 'Verstuurd · afgehandeld', {
-        action: {
-          label: 'Houd open',
-          onClick: async () => {
-            try {
-              await reopenMut.mutateAsync({ id: originalId });
-              toast.info('Terug in inbox', 'Open gehouden');
-            } catch (e) {
-              toast.error(e.message || 'Open houden mislukt');
-            }
-          },
-        },
-      });
-    } else {
-      toast.success(`Verzonden via ${sentVia}`, 'Verstuurd');
-    }
-    if (originalId && selectedMessageId === originalId) advanceSelection(originalId);
+    toast.success(`Verzonden via ${sentVia}`, 'Verstuurd');
   };
 
   const onUrgent = async (m) => {
@@ -374,7 +350,7 @@ export default function App() {
     const map = {
       Escape: () => {
         if (cmdkOpen) return false; // CommandPalette handles its own Escape
-        if (snoozeModal.open || doneModal.open || scheduleModal.open || forwardModal.open || composeOpen) return false;
+        if (snoozeModal.open || scheduleModal.open || forwardModal.open || composeOpen) return false;
         if (selectedMessageId) { setSelectedMessageId(null); return true; }
         if (selectedContactId) { setSelectedContactId(null); return true; }
         return false;
@@ -443,7 +419,7 @@ export default function App() {
       }
     }
     return map;
-  }, [cmdkOpen, snoozeModal.open, doneModal.open, scheduleModal.open, forwardModal.open, composeOpen, selectedMessageId, selectedContactId]);
+  }, [cmdkOpen, snoozeModal.open, scheduleModal.open, forwardModal.open, composeOpen, selectedMessageId, selectedContactId]);
 
   useKeyboard(shortcutMap);
 
@@ -595,17 +571,6 @@ export default function App() {
           snoozeModal.bulkIds
             ? `${snoozeModal.bulkIds.length} bericht${snoozeModal.bulkIds.length === 1 ? '' : 'en'}`
             : snoozeModal.message?.contact_name
-        }
-      />
-
-      <DoneModal
-        open={doneModal.open}
-        onClose={() => setDoneModal({ open: false, message: null, bulkIds: null })}
-        onDone={onDone}
-        contactName={
-          doneModal.bulkIds
-            ? `${doneModal.bulkIds.length} bericht${doneModal.bulkIds.length === 1 ? '' : 'en'}`
-            : doneModal.message?.contact_name
         }
       />
 
