@@ -242,16 +242,18 @@ function persistMessage(channel, msg) {
     return { inserted: false, message_id: null, contact_id: contactId };
   }
 
-  // Auto-wake snoozed messages from same contact (alleen bij inbound new message)
+  // Auto-wake: alleen 'waiting' berichten (status "wacht op reactie") worden gewekt door
+  // een nieuwe inbound reply. 'Snoozed' berichten zijn BEWUST door de gebruiker uitgesteld
+  // tot een specifieke tijd — die worden alleen door de snooze-cron gewekt.
   let woken = 0;
   if (!isOutbound && contactId) {
     const wakeResult = db.prepare(`
       UPDATE messages SET status = 'open', snoozed_until = NULL, updated_at = datetime('now')
-      WHERE contact_id = ? AND status IN ('snoozed', 'waiting') AND id != ?
+      WHERE contact_id = ? AND status = 'waiting' AND id != ?
     `).run(contactId, newId);
     woken = wakeResult.changes;
     if (woken > 0) {
-      console.log(`⚡ Woke ${woken} snoozed/waiting message(s) from contact ${contactName || contactEmail} — new reply received`);
+      console.log(`⚡ Woke ${woken} waiting message(s) from contact ${contactName || contactEmail} — new reply received`);
     }
   }
 
