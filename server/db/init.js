@@ -57,6 +57,42 @@ for (const sql of SAFE_ALTERS) {
   }
 }
 
+// Migration: channels.type CHECK moet 'todo' toestaan (voor het to-do systeem).
+// SQLite kan een CHECK niet via ALTER aanpassen — dus rebuild van de tabel als de
+// oude constraint nog actief is. FK's tijdelijk uit; channels wordt door meerdere
+// tabellen gerefereerd.
+try {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='channels'").get();
+  if (row && !/'todo'/.test(row.sql)) {
+    db.pragma('foreign_keys = OFF');
+    try {
+      const rebuild = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE channels_new (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL CHECK(type IN ('email','whatsapp','instagram','linkedin','todo')),
+            label TEXT NOT NULL,
+            account_email TEXT,
+            is_active INTEGER DEFAULT 1,
+            config_json TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+          );
+          INSERT INTO channels_new (id, type, label, account_email, is_active, config_json, created_at)
+            SELECT id, type, label, account_email, is_active, config_json, created_at FROM channels;
+          DROP TABLE channels;
+          ALTER TABLE channels_new RENAME TO channels;
+        `);
+      });
+      rebuild();
+      console.log("🔧 channels.type CHECK uitgebreid met 'todo'");
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
+} catch (e) {
+  console.error('channels todo-migration failed:', e.message);
+}
+
 // Seed quick replies (alleen als tabel leeg is)
 try {
   const n = db.prepare('SELECT COUNT(*) AS n FROM quick_replies').get().n;

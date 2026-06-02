@@ -1026,6 +1026,47 @@ router.post('/compose', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /api/messages/todo — voeg een to-do toe als bericht in het todo-1 kanaal.
+// Een to-do is gewoon een message; alle inbox-acties (snooze/done/pin/urgent) werken.
+router.post('/todo', (req, res) => {
+  try {
+    const { title, description, due_date, priority } = req.body || {};
+    if (!title?.trim()) return res.status(400).json({ error: 'title is required' });
+
+    const id = uuid();
+
+    // Maak een "Ramon" contact als die niet bestaat (voor de avatar / contact-join)
+    let ramonContact = db.prepare("SELECT id FROM contacts WHERE email = 'ramon@endlessminds.nl'").get();
+    if (!ramonContact) {
+      ramonContact = { id: uuid() };
+      db.prepare("INSERT INTO contacts (id, name, email, avatar_initials, avatar_color) VALUES (?, 'Ramon', 'ramon@endlessminds.nl', 'RB', '#3b82f6')")
+        .run(ramonContact.id);
+    }
+
+    db.prepare(`
+      INSERT INTO messages (id, channel_id, contact_id, direction, subject, snippet, body_text, status, priority, received_at, created_at, updated_at)
+      VALUES (?, 'todo-1', ?, 'inbound', ?, ?, ?, 'open', ?, datetime('now'), datetime('now'), datetime('now'))
+    `).run(
+      id,
+      ramonContact.id,
+      title.trim(),
+      description?.trim() || title.trim(),
+      description?.trim() || null,
+      priority || 'medium',
+    );
+
+    // Als er een due_date is: snooze tot die datum zodat de to-do dan terugkomt
+    if (due_date) {
+      db.prepare(`UPDATE messages SET snoozed_until = ?, status = 'snoozed', snoozed_at = datetime('now') WHERE id = ?`)
+        .run(due_date, id);
+    }
+
+    res.json({ ok: true, id, title: title.trim() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/messages/compose-chat — start nieuw WhatsApp/LinkedIn/Instagram gesprek of stuur in bestaande chat
 router.post('/compose-chat', async (req, res) => {
   try {

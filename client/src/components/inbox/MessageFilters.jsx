@@ -6,6 +6,7 @@ const FILTERS = [
   { id: 'email', label: 'Email', icon: 'envelope', brand: false },
   { id: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', brand: true },
   { id: 'linkedin', label: 'LinkedIn', icon: 'linkedin', brand: true },
+  { id: 'todo', label: 'To-do', icon: 'list-check', brand: false },
 ];
 
 export default function MessageFilters({ channelFilter, onChannelFilter, search, onSearch, extra }) {

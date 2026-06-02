@@ -92,6 +92,7 @@ export default function App() {
   const [forwardModal, setForwardModal] = useState({ open: false, message: null });
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeChannel, setComposeChannel] = useState(null);
 
   const toast = useToast();
   // Houd een ref-pointer naar toast zodat useCallback's (zoals advanceSelection) hem kunnen gebruiken
@@ -357,6 +358,13 @@ export default function App() {
       },
       n: () => {
         if (composeOpen) return false;
+        setComposeChannel(null);
+        setComposeOpen(true);
+        return true;
+      },
+      t: () => {
+        if (composeOpen) return false;
+        setComposeChannel('todo');
         setComposeOpen(true);
         return true;
       },
@@ -472,7 +480,7 @@ export default function App() {
             onBulkArchive={onBulkArchive}
             onBulkBlock={onBulkBlock}
             onForward={handleForward}
-            onCompose={() => setComposeOpen(true)}
+            onCompose={() => { setComposeChannel(null); setComposeOpen(true); }}
             selectedId={selectedMessageId}
           />
         );
@@ -525,7 +533,7 @@ export default function App() {
         <Sidebar
           active={view}
           onSelect={(id) => { setView(id); setSelectedMessageId(null); }}
-          onCompose={() => setComposeOpen(true)}
+          onCompose={() => { setComposeChannel(null); setComposeOpen(true); }}
         />
         <main className="flex flex-1 flex-col overflow-hidden">
           <WelcomeScreen onGoToSettings={() => setView('instellingen')} />
@@ -539,7 +547,7 @@ export default function App() {
       <Sidebar
         active={view}
         onSelect={(id) => { setView(id); setSelectedMessageId(null); }}
-        onCompose={() => setComposeOpen(true)}
+        onCompose={() => { setComposeChannel(null); setComposeOpen(true); }}
       />
 
       <main className="flex flex-1 flex-col overflow-hidden">
@@ -595,7 +603,7 @@ export default function App() {
         onOpenContact={(c) => setSelectedContactId(c.id)}
       />
 
-      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} />
+      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} initialChannel={composeChannel} />
     </div>
   );
 }

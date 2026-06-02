@@ -7,6 +7,7 @@ import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../l
 export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onPin, onUnpin, onForward, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
+  const isTodo = m.channel_type === 'todo';
 
   return (
     <div
@@ -27,17 +28,23 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
         />
       ) : null}
 
-      <Avatar
-        name={m.contact_name}
-        initials={m.contact_initials}
-        color={m.contact_color}
-        size="md"
-      />
+      {isTodo ? (
+        <div className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-purple-100">
+          <i className="fa-solid fa-circle-check text-lg text-purple-600" />
+        </div>
+      ) : (
+        <Avatar
+          name={m.contact_name}
+          initials={m.contact_initials}
+          color={m.contact_color}
+          size="md"
+        />
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-semibold text-gray-900">
-            {m.contact_name || m.channel_account || 'Onbekend'}
+            {isTodo ? (m.subject || 'To-do') : (m.contact_name || m.channel_account || 'Onbekend')}
           </span>
           {m.message_count > 1 ? (
             <span

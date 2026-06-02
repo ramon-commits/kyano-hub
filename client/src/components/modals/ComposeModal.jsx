@@ -15,10 +15,11 @@ const CHANNEL_META = {
 
 const ALL_CHANNEL_TYPES = ['email', 'whatsapp', 'linkedin', 'instagram'];
 
-export default function ComposeModal({ open, onClose }) {
+export default function ComposeModal({ open, onClose, initialChannel = null }) {
   const { data: channelsData } = useChannels();
   const toast = useToast();
 
+  const [mode, setMode] = useState('message'); // 'message' | 'todo'
   const [contact, setContact] = useState(null);
   const [channelType, setChannelType] = useState(null);
   const [accountId, setAccountId] = useState('');
@@ -33,6 +34,14 @@ export default function ComposeModal({ open, onClose }) {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const textareaRef = useRef(null);
   const langWrapRef = useRef(null);
+  const todoTitleRef = useRef(null);
+
+  // To-do velden
+  const [todoTitle, setTodoTitle] = useState('');
+  const [todoDesc, setTodoDesc] = useState('');
+  const [todoDate, setTodoDate] = useState('');
+  const [todoTime, setTodoTime] = useState('');
+  const [todoPriority, setTodoPriority] = useState('medium');
 
   const allChannels = channelsData?.channels || [];
   const connectedChannels = allChannels.filter((c) => c.is_connected !== 0 && c.is_connected !== false);
@@ -40,6 +49,7 @@ export default function ComposeModal({ open, onClose }) {
   // Reset bij openen
   useEffect(() => {
     if (!open) return;
+    setMode(initialChannel === 'todo' ? 'todo' : 'message');
     setContact(null);
     setChannelType(null);
     setAccountId('');
@@ -52,7 +62,19 @@ export default function ComposeModal({ open, onClose }) {
     setSending(false);
     setAiLoading(null);
     setShowLangPicker(false);
-  }, [open]);
+    setTodoTitle('');
+    setTodoDesc('');
+    setTodoDate('');
+    setTodoTime('');
+    setTodoPriority('medium');
+  }, [open, initialChannel]);
+
+  // Focus de titel zodra de to-do modus actief is (snelle 't' flow)
+  useEffect(() => {
+    if (open && mode === 'todo') {
+      requestAnimationFrame(() => todoTitleRef.current?.focus());
+    }
+  }, [open, mode]);
 
   useEffect(() => {
     if (!showLangPicker) return undefined;
@@ -196,12 +218,40 @@ export default function ComposeModal({ open, onClose }) {
     }
   };
 
+  const submitTodo = async () => {
+    if (!todoTitle.trim()) { toast.warning('Vul een titel in'); todoTitleRef.current?.focus(); return; }
+
+    let due_date = null;
+    if (todoDate) {
+      const d = new Date(`${todoDate}T${todoTime || '09:00'}`);
+      if (!isNaN(d.getTime())) due_date = d.toISOString();
+    }
+
+    setSending(true);
+    try {
+      await api.post('/messages/todo', {
+        title: todoTitle.trim(),
+        description: todoDesc.trim() || null,
+        due_date,
+        priority: todoPriority,
+      });
+      toast.success('To-do toegevoegd');
+      onClose?.();
+    } catch (e) {
+      toast.error(e.message || 'Toevoegen mislukt');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const isTodoMode = mode === 'todo';
+
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Nieuw bericht"
-      subtitle="Start een nieuw gesprek via email, WhatsApp of LinkedIn"
+      title={isTodoMode ? 'Nieuwe to-do' : 'Nieuw bericht'}
+      subtitle={isTodoMode ? 'Voeg een taak toe aan je inbox' : 'Start een nieuw gesprek via email, WhatsApp of LinkedIn'}
       maxWidth="max-w-2xl"
       footer={
         <>
@@ -211,24 +261,134 @@ export default function ComposeModal({ open, onClose }) {
           >
             Annuleren
           </button>
-          <button
-            onClick={submit}
-            disabled={sending || !channelType || !accountId || !text.trim()}
-            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            {sending ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                Versturen…
-              </span>
-            ) : (
-              <><i className="fa-solid fa-paper-plane mr-1.5" />Verstuur{channelMeta ? ` via ${channelMeta.label}` : ''}</>
-            )}
-          </button>
+          {isTodoMode ? (
+            <button
+              onClick={submitTodo}
+              disabled={sending || !todoTitle.trim()}
+              className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {sending ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  Toevoegen…
+                </span>
+              ) : (
+                <><i className="fa-solid fa-plus mr-1.5" />Toevoegen</>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={submit}
+              disabled={sending || !channelType || !accountId || !text.trim()}
+              className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {sending ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  Versturen…
+                </span>
+              ) : (
+                <><i className="fa-solid fa-paper-plane mr-1.5" />Verstuur{channelMeta ? ` via ${channelMeta.label}` : ''}</>
+              )}
+            </button>
+          )}
         </>
       }
     >
       <div className="space-y-5 p-5">
+        {/* Modus: Bericht of To-do */}
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          <button
+            onClick={() => setMode('message')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              !isTodoMode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <i className="fa-solid fa-paper-plane" />Bericht
+          </button>
+          <button
+            onClick={() => setMode('todo')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              isTodoMode ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <i className="fa-solid fa-list-check" />To-do
+          </button>
+        </div>
+
+        {isTodoMode ? (
+          <section className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Titel</label>
+              <input
+                ref={todoTitleRef}
+                type="text"
+                value={todoTitle}
+                onChange={(e) => setTodoTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); submitTodo(); }
+                }}
+                placeholder="Wat moet er gebeuren?"
+                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Beschrijving</label>
+              <textarea
+                value={todoDesc}
+                onChange={(e) => setTodoDesc(e.target.value)}
+                rows={3}
+                placeholder="Optionele details…"
+                className="w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Deadline (optioneel)</label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={todoDate}
+                  onChange={(e) => setTodoDate(e.target.value)}
+                  className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10"
+                />
+                <input
+                  type="time"
+                  value={todoTime}
+                  onChange={(e) => setTodoTime(e.target.value)}
+                  className="w-32 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10"
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                <i className="fa-solid fa-info-circle mr-1" />Met een deadline wordt de to-do gesnoozed tot die datum.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Prioriteit</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTodoPriority('medium')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    todoPriority === 'medium' ? 'border-gray-400 bg-gray-100 text-gray-800' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Normaal
+                </button>
+                <button
+                  onClick={() => setTodoPriority('high')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    todoPriority === 'high' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <i className="fa-solid fa-circle-exclamation" />Urgent
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : (
+        <>
         {/* STAP 1 — Contact */}
         <section>
           <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">
@@ -445,6 +605,8 @@ export default function ComposeModal({ open, onClose }) {
             </div>
           </section>
         ) : null}
+        </>
+        )}
       </div>
     </Modal>
   );

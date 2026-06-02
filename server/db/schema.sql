@@ -17,7 +17,7 @@ CREATE INDEX IF NOT EXISTS idx_sender_rules_pattern ON sender_rules(email_patter
 -- Kanalen (email accounts, WhatsApp lijnen, etc.)
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY,
-  type TEXT NOT NULL CHECK(type IN ('email','whatsapp','instagram','linkedin')),
+  type TEXT NOT NULL CHECK(type IN ('email','whatsapp','instagram','linkedin','todo')),
   label TEXT NOT NULL,
   account_email TEXT,
   is_active INTEGER DEFAULT 1,

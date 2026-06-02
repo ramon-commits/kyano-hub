@@ -5,6 +5,7 @@ export const CHANNEL_COLORS = {
   whatsapp:  { bg: '#f0fdf4', text: '#16a34a', icon: 'whatsapp',  brand: true,  label: 'WhatsApp' },
   instagram: { bg: '#fdf2f8', text: '#ec4899', icon: 'instagram', brand: true,  label: 'Instagram' },
   linkedin:  { bg: '#eff6ff', text: '#3b82f6', icon: 'linkedin',  brand: true,  label: 'LinkedIn' },
+  todo:      { bg: '#faf5ff', text: '#7e22ce', icon: 'list-check',brand: false, label: 'To-do' },
 };
 
 export const PRIORITY_COLORS = {

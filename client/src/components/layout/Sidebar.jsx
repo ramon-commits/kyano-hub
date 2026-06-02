@@ -16,10 +16,12 @@ function dotFor(channel) {
   if (channel.type === 'whatsapp') return 'bg-green-500';
   if (channel.type === 'instagram') return 'bg-pink-500';
   if (channel.type === 'linkedin') return 'bg-blue-500';
+  if (channel.type === 'todo') return 'bg-purple-500';
   return 'bg-gray-500';
 }
 
 function dotTitle(channel) {
+  if (channel.type === 'todo') return `${channel.label} — ${channel.open_count || 0} open`;
   if (channel.type !== 'email') return `${channel.label} (placeholder)`;
   if (channel.has_error) return `${channel.label} — ${channel.error_message || 'Herconnectie nodig'}`;
   if (channel.is_connected) return `${channel.label} — verbonden`;
