@@ -76,6 +76,7 @@ router.get('/', (req, res) => {
       SELECT
         m.id AS latest_id,
         m.received_at AS latest_received_at,
+        m.priority AS latest_priority,
         COALESCE(m.thread_id, m.id) AS thread_key,
         COUNT(*) OVER (PARTITION BY COALESCE(m.thread_id, m.id)) AS thread_open_count,
         ROW_NUMBER() OVER (
@@ -87,11 +88,12 @@ router.get('/', (req, res) => {
       LEFT JOIN channels ch ON ch.id = m.channel_id
       ${whereSql}
     `;
+    // Urgente berichten (priority 'high', incl. urgente to-do's) bovenaan, daarna op datum.
     const latestRows = db.prepare(`
       SELECT latest_id, thread_key, thread_open_count
       FROM (${latestSql})
       WHERE rn = 1
-      ORDER BY latest_received_at DESC
+      ORDER BY (latest_priority = 'high') DESC, latest_received_at DESC
     `).all(params);
 
     const total = latestRows.length;
@@ -110,7 +112,12 @@ router.get('/', (req, res) => {
     const countByLatest = new Map(pageRowsMeta.map((r) => [r.latest_id, r.thread_open_count]));
     const enriched = fullRows
       .map((r) => ({ ...r, message_count: countByLatest.get(r.id) || 1 }))
-      .sort((a, b) => new Date(b.received_at) - new Date(a.received_at));
+      .sort((a, b) => {
+        const ap = a.priority === 'high' ? 1 : 0;
+        const bp = b.priority === 'high' ? 1 : 0;
+        if (ap !== bp) return bp - ap;
+        return new Date(b.received_at) - new Date(a.received_at);
+      });
 
     return res.json({ messages: enriched, total, limit, offset });
   }
@@ -1043,6 +1050,20 @@ router.post('/todo', (req, res) => {
         .run(ramonContact.id);
     }
 
+    // Een to-do staat ALTIJD 'open' met vandaag als datum (bovenaan inbox).
+    // De deadline is puur informatief — Ramon snoozet zelf als hij 'm later wil doen.
+    const baseText = description?.trim() || title.trim();
+    let snippetText = baseText;
+    let bodyText = description?.trim() || null;
+    if (due_date) {
+      const d = new Date(due_date);
+      if (!isNaN(d.getTime())) {
+        const label = d.toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        snippetText = `${baseText} · Deadline: ${label}`;
+        bodyText = `${bodyText ? bodyText + '\n\n' : ''}Deadline: ${label}`;
+      }
+    }
+
     db.prepare(`
       INSERT INTO messages (id, channel_id, contact_id, direction, subject, snippet, body_text, status, priority, received_at, created_at, updated_at)
       VALUES (?, 'todo-1', ?, 'inbound', ?, ?, ?, 'open', ?, datetime('now'), datetime('now'), datetime('now'))
@@ -1050,16 +1071,10 @@ router.post('/todo', (req, res) => {
       id,
       ramonContact.id,
       title.trim(),
-      description?.trim() || title.trim(),
-      description?.trim() || null,
+      snippetText,
+      bodyText,
       priority || 'medium',
     );
-
-    // Als er een due_date is: snooze tot die datum zodat de to-do dan terugkomt
-    if (due_date) {
-      db.prepare(`UPDATE messages SET snoozed_until = ?, status = 'snoozed', snoozed_at = datetime('now') WHERE id = ?`)
-        .run(due_date, id);
-    }
 
     res.json({ ok: true, id, title: title.trim() });
   } catch (e) {
