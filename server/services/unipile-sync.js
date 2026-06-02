@@ -26,7 +26,12 @@ function setChannelUnipileAccount(channelId, unipileAccountId) {
 }
 
 function autoMapAccounts(accounts) {
-  const buckets = { whatsapp: ['wa-1', 'wa-2'], linkedin: ['li-1'], instagram: ['ig-1'] };
+  // Slots dynamisch uit de DB halen (op id-volgorde) i.p.v. hardcoded — zo werkt
+  // elk extra kanaal (wa-3, ig-2, …) automatisch zonder code-wijziging.
+  const buckets = { whatsapp: [], linkedin: [], instagram: [] };
+  for (const r of db.prepare("SELECT id, type FROM channels WHERE type IN ('whatsapp','linkedin','instagram') ORDER BY id").all()) {
+    if (buckets[r.type]) buckets[r.type].push(r.id);
+  }
   const used = new Set();
   for (const r of db.prepare("SELECT id, config_json FROM channels WHERE config_json IS NOT NULL").all()) {
     try {
