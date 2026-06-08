@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMessage, useThread, useReplyMessage, useReplyWithMedia } from '../../hooks/useMessages.js';
+import { useMessage, useThread, useReplyMessage, useReplyWithMedia, useReplyEmailWithAttachments } from '../../hooks/useMessages.js';
 import EmailThread from './EmailThread.jsx';
 import ChatThread from './ChatThread.jsx';
 import ReplyComposer from './ReplyComposer.jsx';
@@ -28,6 +28,7 @@ export default function ConversationView({
   const { data: thread } = useThread(messageId);
   const replyMut = useReplyMessage();
   const replyMediaMut = useReplyWithMedia();
+  const replyEmailAttachMut = useReplyEmailWithAttachments();
   const toast = useToast();
   const [showSummary, setShowSummary] = useState(false);
 
@@ -89,10 +90,12 @@ export default function ConversationView({
     }
   };
 
-  const handleSendMedia = async ({ text, files }) => {
+  const handleSendMedia = async ({ text, files, cc, bcc }) => {
     if (!files?.length) return false;
     try {
-      const result = await replyMediaMut.mutateAsync({ id: messageId, text, files });
+      const result = m.channel_type === 'email'
+        ? await replyEmailAttachMut.mutateAsync({ id: messageId, text, cc, bcc, files })
+        : await replyMediaMut.mutateAsync({ id: messageId, text, files });
       if (onReplySent) {
         onReplySent({
           from: m.channel_account || m.channel_label,
@@ -226,7 +229,7 @@ export default function ConversationView({
           messageId={messageId}
           channelType={m.channel_type}
           defaultAccount={m.channel_account}
-          sending={replyMut.isPending || replyMediaMut.isPending}
+          sending={replyMut.isPending || replyMediaMut.isPending || replyEmailAttachMut.isPending}
           onSend={handleSend}
           onSendMedia={handleSendMedia}
           onCopy={handleCopy}

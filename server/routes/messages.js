@@ -16,6 +16,23 @@ const mediaUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024, files: 5 },
 });
 
+// Voor email-bijlagen (reply / forward / compose) — tot 10 bestanden, 10MB elk.
+// multer laat JSON-requests ongemoeid: bij een niet-multipart body roept .array() gewoon next() aan.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 10 },
+});
+
+// Normaliseer geüploade multer-bestanden naar het attachment-formaat dat gmail-send verwacht.
+function filesToAttachments(files) {
+  return (files || []).map((f) => ({
+    content: f.buffer,
+    filename: f.originalname,
+    mimeType: f.mimetype,
+    size: f.size,
+  }));
+}
+
 function kindForMime(mime, filename) {
   const m = (mime || '').toLowerCase();
   if (m.startsWith('image/')) return 'image';
@@ -574,16 +591,17 @@ router.get('/:id/thread', (req, res) => {
 });
 
 // POST /api/messages/:id/reply — verstuur een reply via Gmail API
-router.post('/:id/reply', async (req, res, next) => {
+router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
   try {
     const original = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
     if (!original) return res.status(404).json({ error: 'Message not found' });
 
     const { body_html, body_text, cc, bcc, body } = req.body || {};
+    const attachments = filesToAttachments(req.files);
     const plainBody = body_text ?? body ?? '';
     const htmlBody = body_html ?? (plainBody ? `<div>${plainBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</div>` : '');
 
-    if (!plainBody && !htmlBody) return res.status(400).json({ error: 'body is required' });
+    if (!plainBody && !htmlBody && attachments.length === 0) return res.status(400).json({ error: 'body is required' });
 
     if (original.channel_type !== 'email') {
       // Unipile-pad: WhatsApp / Instagram / LinkedIn
@@ -658,21 +676,29 @@ router.post('/:id/reply', async (req, res, next) => {
       bodyText: plainBody,
       inReplyTo,
       references,
+      attachments: attachments.length ? attachments : undefined,
     });
 
     // Sla het verzonden bericht lokaal op (status='archived' voor outbound)
     const localId = uuid();
-    const snippet = (plainBody || htmlBody.replace(/<[^>]+>/g, '')).trim().slice(0, 200);
+    const snippet = ((plainBody || htmlBody.replace(/<[^>]+>/g, '')).trim()
+      || (attachments.length ? `📎 ${attachments.length} bijlage${attachments.length === 1 ? '' : 'n'}` : '')).slice(0, 200);
+    const localAttachments = attachments.map((att, idx) => ({
+      id: `reply-${idx}-${Date.now()}`,
+      filename: att.filename,
+      mimeType: att.mimeType,
+      size: att.size,
+    }));
 
     db.prepare(`
       INSERT OR IGNORE INTO messages (
         id, external_id, channel_id, contact_id, direction, subject, snippet,
         body_html, body_text, deep_link, thread_id, in_reply_to,
-        status, priority, received_at
+        status, priority, received_at, attachments_json
       ) VALUES (
         @id, @external_id, @channel_id, @contact_id, 'outbound', @subject, @snippet,
         @body_html, @body_text, @deep_link, @thread_id, @in_reply_to,
-        'archived', 'medium', @received_at
+        'archived', 'medium', @received_at, @attachments_json
       )
     `).run({
       id: localId,
@@ -687,6 +713,7 @@ router.post('/:id/reply', async (req, res, next) => {
       thread_id: result.threadId || original.thread_id,
       in_reply_to: original.external_id || null,
       received_at: new Date().toISOString(),
+      attachments_json: localAttachments.length ? JSON.stringify(localAttachments) : null,
     });
 
     // GEEN auto-done — gesprek blijft open na reply. Wel: extern markeren als gelezen
@@ -815,7 +842,7 @@ router.post('/:id/reply-with-media', mediaUpload.array('files', 5), async (req, 
 const FORWARD_MAX_TOTAL_BYTES = 25 * 1024 * 1024;
 
 // POST /api/messages/:id/forward — stuur een email door
-router.post('/:id/forward', async (req, res, next) => {
+router.post('/:id/forward', upload.array('files', 10), async (req, res, next) => {
   try {
     const original = db.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).get(req.params.id);
     if (!original) return res.status(404).json({ error: 'Message not found' });
@@ -831,44 +858,54 @@ router.post('/:id/forward', async (req, res, next) => {
     const subject = (original.subject || '').replace(/^(Fwd?:\s*)+/i, '');
     const forwardSubject = `Fwd: ${subject || '(geen onderwerp)'}`;
 
-    // Bouw quote: tekst + HTML versie
-    const senderLine = original.contact_name && original.contact_email
-      ? `${original.contact_name} <${original.contact_email}>`
-      : (original.contact_email || original.contact_name || 'onbekend');
-    const dateStr = original.received_at || '';
-    const origText = original.body_text || (original.snippet || '');
-    const origHtml = original.body_html || `<div>${escapeHtmlForForward(origText)}</div>`;
+    // ===== FIX 1 — stuur de HELE thread mee zodat de ontvanger volledige context heeft =====
+    const threadKey = original.thread_id || original.id;
+    const threadMsgs = db.prepare(`
+      SELECT m.*, c.name AS contact_name
+      FROM messages m
+      LEFT JOIN contacts c ON c.id = m.contact_id
+      WHERE COALESCE(m.thread_id, m.id) = ?
+      ORDER BY m.received_at ASC
+    `).all(threadKey);
+
+    const whoFor = (m) => (m.direction === 'outbound' ? 'Ramon Brugman' : (m.contact_name || 'Onbekend'));
+    const fmtDate = (m) => {
+      const d = new Date(m.received_at);
+      return isNaN(d.getTime())
+        ? (m.received_at || '')
+        : d.toLocaleString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
+    const threadHtml = threadMsgs.map((m) => {
+      const bodyInner = m.body_html || `<p>${escapeHtmlForForward(m.body_text || m.snippet || '').replace(/\n/g, '<br>')}</p>`;
+      return `<div style="margin-bottom:16px;">
+        <p style="color:#666;font-size:12px;margin:0 0 4px 0;"><b>${escapeHtmlForForward(whoFor(m))}</b> — ${escapeHtmlForForward(fmtDate(m))}</p>
+        <div>${bodyInner}</div>
+      </div>`;
+    }).join('<hr style="border:none;border-top:1px solid #eee;margin:12px 0;">');
+
+    const threadText = threadMsgs.map((m) => {
+      return `${whoFor(m)} — ${fmtDate(m)}\n${m.body_text || m.snippet || ''}\n`;
+    }).join('\n---\n\n');
 
     const extra = (extra_text || '').toString();
-    const headerLines = [
-      '---------- Forwarded message ---------',
-      `Van: ${senderLine}`,
-      `Datum: ${dateStr}`,
-      `Onderwerp: ${original.subject || '(geen onderwerp)'}`,
-      `Aan: ${original.channel_account || ''}`,
-      '',
-    ];
 
-    const bodyText = [
-      extra,
-      extra ? '' : null,
-      ...headerLines,
-      origText,
-    ].filter((x) => x !== null).join('\n');
+    const bodyHtml = (extra ? `<div>${escapeHtmlForForward(extra).replace(/\n/g, '<br>')}</div><br>` : '') +
+      `<div style="border-left:2px solid #ccc;padding-left:12px;color:#555;">
+        <p><b>---------- Doorgestuurd bericht ---------</b><br>
+        Onderwerp: ${escapeHtmlForForward(original.subject || '(geen onderwerp)')}<br>
+        ${threadMsgs.length} bericht${threadMsgs.length === 1 ? '' : 'en'} in deze thread</p>
+        <br>
+        ${threadHtml}
+      </div>`;
 
-    const bodyHtml = `
-      ${extra ? `<div>${escapeHtmlForForward(extra).replace(/\n/g, '<br>')}</div><br>` : ''}
-      <div style="color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin-bottom:12px">
-        <div><strong>---------- Forwarded message ---------</strong></div>
-        <div><strong>Van:</strong> ${escapeHtmlForForward(senderLine)}</div>
-        <div><strong>Datum:</strong> ${escapeHtmlForForward(dateStr)}</div>
-        <div><strong>Onderwerp:</strong> ${escapeHtmlForForward(original.subject || '(geen onderwerp)')}</div>
-        <div><strong>Aan:</strong> ${escapeHtmlForForward(original.channel_account || '')}</div>
-      </div>
-      <blockquote style="margin:0;padding-left:12px;border-left:3px solid #d1d5db;color:#374151">
-        ${origHtml}
-      </blockquote>
-    `.trim();
+    const bodyText = (extra ? extra + '\n\n' : '') +
+      `---------- Doorgestuurd bericht ---------\n` +
+      `Onderwerp: ${original.subject || '(geen onderwerp)'}\n` +
+      `${threadMsgs.length} bericht${threadMsgs.length === 1 ? '' : 'en'}\n\n` +
+      threadText;
+
+    const origText = original.body_text || (original.snippet || '');
 
     // Bijlagen downloaden uit Gmail en meesturen in de doorgestuurde mail
     const attachmentMeta = parseForwardAttachments(original.attachments_json);
@@ -911,6 +948,18 @@ router.post('/:id/forward', async (req, res, next) => {
       }
     }
 
+    // FIX 2 — combineer originele bijlagen met nieuw geüploade bestanden
+    const uploadedAttachments = filesToAttachments(req.files);
+    for (const att of uploadedAttachments) {
+      totalBytes += att.size || (att.content ? att.content.length : 0);
+      if (totalBytes > FORWARD_MAX_TOTAL_BYTES) {
+        return res.status(413).json({
+          error: `Bijlagen samen groter dan ${Math.round(FORWARD_MAX_TOTAL_BYTES / (1024 * 1024))}MB — Gmail limiet`,
+        });
+      }
+    }
+    const allAttachments = [...downloadedAttachments, ...uploadedAttachments];
+
     const result = await sendNew(original.channel_id, {
       to: to.trim(),
       cc: cc || null,
@@ -918,12 +967,12 @@ router.post('/:id/forward', async (req, res, next) => {
       subject: forwardSubject,
       bodyHtml,
       bodyText,
-      attachments: downloadedAttachments.length ? downloadedAttachments : undefined,
+      attachments: allAttachments.length ? allAttachments : undefined,
     });
 
     // Lokaal opslaan als outbound met genormaliseerde attachments-metadata
     const localId = uuid();
-    const localAttachments = downloadedAttachments.map((att, idx) => ({
+    const localAttachments = allAttachments.map((att, idx) => ({
       id: `fwd-${idx}-${Date.now()}`,
       filename: att.filename,
       mimeType: att.mimeType,
@@ -990,10 +1039,11 @@ function escapeHtmlForForward(s) {
 }
 
 // POST /api/messages/compose — nieuw bericht (geen reply)
-router.post('/compose', async (req, res, next) => {
+router.post('/compose', upload.array('files', 10), async (req, res, next) => {
   try {
     const { channel_id, to, cc, bcc, subject, body_html, body_text } = req.body || {};
-    if (!channel_id || !to || !(body_html || body_text)) {
+    const attachments = filesToAttachments(req.files);
+    if (!channel_id || !to || !(body_html || body_text || attachments.length)) {
       return res.status(400).json({ error: 'channel_id, to en body zijn verplicht' });
     }
 
@@ -1007,29 +1057,38 @@ router.post('/compose', async (req, res, next) => {
       subject: subject || '(geen onderwerp)',
       bodyHtml: body_html || null,
       bodyText: body_text || null,
+      attachments: attachments.length ? attachments : undefined,
     });
 
     // Match contact en sla lokaal op
     const contact = matchContact({ email: to.split('<').pop().replace('>', '').trim(), name: null, phone: null });
 
     const localId = uuid();
-    const snippet = (body_text || body_html?.replace(/<[^>]+>/g, '') || '').trim().slice(0, 200);
+    const localAttachments = attachments.map((att, idx) => ({
+      id: `compose-${idx}-${Date.now()}`,
+      filename: att.filename,
+      mimeType: att.mimeType,
+      size: att.size,
+    }));
+    const snippet = ((body_text || body_html?.replace(/<[^>]+>/g, '') || '').trim()
+      || (attachments.length ? `📎 ${attachments.length} bijlage${attachments.length === 1 ? '' : 'n'}` : '')).slice(0, 200);
 
     db.prepare(`
       INSERT OR IGNORE INTO messages (
         id, external_id, channel_id, contact_id, direction, subject, snippet,
-        body_html, body_text, thread_id, status, priority, received_at
+        body_html, body_text, thread_id, status, priority, received_at, attachments_json
       ) VALUES (
         @id, @external_id, @channel_id, @contact_id, 'outbound', @subject, @snippet,
-        @body_html, @body_text, @thread_id, 'archived', 'medium', @received_at
+        @body_html, @body_text, @thread_id, 'archived', 'medium', @received_at, @attachments_json
       )
     `).run({
       id: localId, external_id: result.messageId, channel_id, contact_id: contact?.id || null,
       subject: subject || '(geen onderwerp)', snippet, body_html, body_text,
       thread_id: result.threadId, received_at: new Date().toISOString(),
+      attachments_json: localAttachments.length ? JSON.stringify(localAttachments) : null,
     });
 
-    res.json({ ok: true, message_id: localId, gmail_message_id: result.messageId, thread_id: result.threadId, from: result.fromEmail });
+    res.json({ ok: true, message_id: localId, gmail_message_id: result.messageId, thread_id: result.threadId, from: result.fromEmail, attachments: localAttachments.length });
   } catch (e) { next(e); }
 });
 

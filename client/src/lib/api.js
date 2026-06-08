@@ -16,9 +16,27 @@ async function request(method, path, body) {
   return data;
 }
 
+// Verstuur multipart/form-data (bijv. bijlagen). GEEN Content-Type header zetten —
+// de browser bepaalt zelf de multipart-boundary.
+async function requestForm(method, path, formData) {
+  const res = await fetch(`/api${path}`, { method, body: formData });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+  if (!res.ok) {
+    const err = new Error(data?.error || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
 export const api = {
   get: (path) => request('GET', path),
   post: (path, body) => request('POST', path, body),
+  postForm: (path, formData) => requestForm('POST', path, formData),
   patch: (path, body) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
   health: () => fetch('/api/health').then((r) => r.json()),

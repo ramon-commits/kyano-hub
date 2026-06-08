@@ -9,10 +9,12 @@ export default function ForwardModal({ open, onClose, message }) {
   const [bcc, setBcc] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [extraText, setExtraText] = useState('');
+  const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const debounceRef = useRef(null);
+  const fileInputRef = useRef(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -22,6 +24,7 @@ export default function ForwardModal({ open, onClose, message }) {
     setBcc('');
     setShowCcBcc(false);
     setExtraText('');
+    setFiles([]);
     setSuggestions([]);
     setSuggestionsOpen(false);
   }, [open]);
@@ -69,12 +72,13 @@ export default function ForwardModal({ open, onClose, message }) {
     if (!message?.id) return;
     setSending(true);
     try {
-      const r = await api.post(`/messages/${message.id}/forward`, {
-        to: to.trim(),
-        cc: cc.trim() || null,
-        bcc: bcc.trim() || null,
-        extra_text: extraText || null,
-      });
+      const formData = new FormData();
+      formData.append('to', to.trim());
+      if (cc.trim()) formData.append('cc', cc.trim());
+      if (bcc.trim()) formData.append('bcc', bcc.trim());
+      if (extraText) formData.append('extra_text', extraText);
+      for (const f of files) formData.append('files', f, f.name);
+      const r = await api.postForm(`/messages/${message.id}/forward`, formData);
       const attLabel = r.attachments ? ` + ${r.attachments} bijlage${r.attachments === 1 ? '' : 'n'}` : '';
       toast.success(`Doorgestuurd naar ${r.to}${attLabel}`, 'Verstuurd');
       onClose?.();
@@ -187,6 +191,45 @@ export default function ForwardModal({ open, onClose, message }) {
             placeholder="Voeg een korte toelichting toe…"
             className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            <i className="fa-solid fa-paperclip" /> Bijlage toevoegen
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
+              e.target.value = '';
+            }}
+          />
+          {files.length > 0 ? (
+            <div className="mt-2 space-y-1">
+              {files.map((f, i) => (
+                <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5 text-sm">
+                  <i className="fa-solid fa-file text-gray-400" />
+                  <span className="flex-1 truncate">{f.name}</span>
+                  <span className="text-xs text-gray-400">{(f.size / 1024).toFixed(0)} KB</span>
+                  <button
+                    type="button"
+                    onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                    className="text-gray-400 hover:text-red-500"
+                    aria-label="Bijlage verwijderen"
+                  >
+                    <i className="fa-solid fa-xmark" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div>

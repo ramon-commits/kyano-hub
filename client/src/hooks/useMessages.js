@@ -81,6 +81,26 @@ export function useReplyWithMedia() {
   });
 }
 
+// Email reply mét bijlagen — verstuurt multipart/form-data naar /reply (Gmail).
+export function useReplyEmailWithAttachments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, text, cc, bcc, files }) => {
+      const form = new FormData();
+      if (text) form.append('body_text', text);
+      if (cc) form.append('cc', cc);
+      if (bcc) form.append('bcc', bcc);
+      for (const f of files) form.append('files', f, f.name);
+      return api.postForm(`/messages/${id}/reply`, form);
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['thread'] });
+      qc.invalidateQueries({ queryKey: ['message', vars.id] });
+    },
+  });
+}
+
 export function useSyncAll() {
   const qc = useQueryClient();
   return useMutation({

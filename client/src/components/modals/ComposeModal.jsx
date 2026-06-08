@@ -29,12 +29,14 @@ export default function ComposeModal({ open, onClose, initialChannel = null }) {
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [subject, setSubject] = useState('');
   const [text, setText] = useState('');
+  const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [aiLoading, setAiLoading] = useState(null);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const textareaRef = useRef(null);
   const langWrapRef = useRef(null);
   const todoTitleRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // To-do velden
   const [todoTitle, setTodoTitle] = useState('');
@@ -59,6 +61,7 @@ export default function ComposeModal({ open, onClose, initialChannel = null }) {
     setShowCcBcc(false);
     setSubject('');
     setText('');
+    setFiles([]);
     setSending(false);
     setAiLoading(null);
     setShowLangPicker(false);
@@ -180,14 +183,15 @@ export default function ComposeModal({ open, onClose, initialChannel = null }) {
     setSending(true);
     try {
       if (isEmail) {
-        await api.post('/messages/compose', {
-          channel_id: accountId,
-          to: to.trim(),
-          cc: cc.trim() || null,
-          bcc: bcc.trim() || null,
-          subject: subject.trim(),
-          body_text: text,
-        });
+        const fd = new FormData();
+        fd.append('channel_id', accountId);
+        fd.append('to', to.trim());
+        if (cc.trim()) fd.append('cc', cc.trim());
+        if (bcc.trim()) fd.append('bcc', bcc.trim());
+        fd.append('subject', subject.trim());
+        fd.append('body_text', text);
+        for (const f of files) fd.append('files', f, f.name);
+        await api.postForm('/messages/compose', fd);
         toast.success(`Email verstuurd naar ${recipientLabel}`, 'Verzonden');
         onClose?.();
         return;
@@ -550,6 +554,47 @@ export default function ComposeModal({ open, onClose, initialChannel = null }) {
                 className="w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
               />
             </div>
+
+            {isEmail ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  <i className="fa-solid fa-paperclip" /> Bijlage toevoegen
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
+                    e.target.value = '';
+                  }}
+                />
+                {files.length > 0 ? (
+                  <div className="mt-2 space-y-1">
+                    {files.map((f, i) => (
+                      <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5 text-sm">
+                        <i className="fa-solid fa-file text-gray-400" />
+                        <span className="flex-1 truncate">{f.name}</span>
+                        <span className="text-xs text-gray-400">{(f.size / 1024).toFixed(0)} KB</span>
+                        <button
+                          type="button"
+                          onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                          className="text-gray-400 hover:text-red-500"
+                          aria-label="Bijlage verwijderen"
+                        >
+                          <i className="fa-solid fa-xmark" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-2">
               <button

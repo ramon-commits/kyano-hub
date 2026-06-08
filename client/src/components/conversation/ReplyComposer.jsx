@@ -198,9 +198,11 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
     if (sending) return;
     if (attachedFiles.length > 0) {
       if (!onSendMedia) return;
-      const ok = await onSendMedia({ text, files: attachedFiles });
+      const ok = await onSendMedia({ text, files: attachedFiles, cc, bcc });
       if (ok) {
         setText('');
+        setCc('');
+        setBcc('');
         setAttachedFiles([]);
         setAttachError(null);
       }
@@ -601,13 +603,13 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
           )}
         </button>
 
-        {supportsMedia ? (
+        {supportsMedia || isEmail ? (
           <>
             <input
               ref={fileInputRef}
               type="file"
               multiple
-              accept="image/*,video/*,.pdf,.doc,.docx"
+              accept={isEmail ? undefined : 'image/*,video/*,.pdf,.doc,.docx'}
               onChange={(e) => {
                 handleFilesPicked(e.target.files);
                 e.target.value = '';
@@ -618,11 +620,11 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={sending || attachedFiles.length >= MAX_FILES}
-              aria-label="Foto of bestand toevoegen"
-              title={attachedFiles.length >= MAX_FILES ? `Max ${MAX_FILES} bestanden` : 'Foto of bestand toevoegen'}
+              aria-label="Bijlage toevoegen"
+              title={attachedFiles.length >= MAX_FILES ? `Max ${MAX_FILES} bestanden` : 'Bijlage toevoegen'}
               className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <i className="fa-regular fa-image" />
+              <i className="fa-solid fa-paperclip" />
             </button>
           </>
         ) : null}
