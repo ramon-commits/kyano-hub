@@ -41,13 +41,15 @@ export function seed() {
 // uit oudere installaties die nog stap-1 demo data hebben.
 // Veilig om bij elke startup uit te voeren — touched alleen rijen die matchen.
 export function cleanupDemoData() {
-  // 1. Demo berichten verwijderen.
-  //    Match op: NULL external_id (toekomstig demo patroon) of stap-1 demo IDs.
+  // 1. Demo berichten verwijderen — alleen de expliciete stap-1 demo-ID patronen.
+  //    LET OP: NIET op `external_id IS NULL` matchen. To-do's (channel 'todo-1', commit
+  //    "to-do systeem in inbox") hebben bewust GEEN external_id; die clause verwijderde dus
+  //    echte to-do's én crashte de boot op een FOREIGN KEY constraint (interaction_logs e.a.
+  //    verwijzen naar messages met ON DELETE NO ACTION). Channel 'todo-1' extra uitgesloten.
   const delMsgs = db.prepare(`
     DELETE FROM messages
-    WHERE external_id IS NULL
-       OR external_id LIKE 'gmail-abc%'
-       OR external_id LIKE 'wa-msg-%'
+    WHERE channel_id != 'todo-1'
+      AND (external_id LIKE 'gmail-abc%' OR external_id LIKE 'wa-msg-%')
   `).run();
 
   // 2. Orphaned contacten (geen berichten meer)
