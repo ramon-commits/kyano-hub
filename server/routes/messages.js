@@ -590,6 +590,68 @@ router.get('/:id/thread', (req, res) => {
   res.json({ messages, thread_id: m.thread_id });
 });
 
+// GET /api/messages/:id/thread-download?format=txt|html — download de hele thread als bestand
+router.get('/:id/thread-download', (req, res) => {
+  const format = req.query.format === 'html' ? 'html' : 'txt';
+  const msg = db.prepare('SELECT id, thread_id FROM messages WHERE id = ?').get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Not found' });
+
+  const threadKey = msg.thread_id || msg.id;
+  const threadMsgs = db.prepare(`
+    SELECT m.*, c.name AS contact_name, ch.label AS channel_label
+    FROM messages m
+    LEFT JOIN contacts c ON c.id = m.contact_id
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    WHERE COALESCE(m.thread_id, m.id) = ?
+    ORDER BY m.received_at ASC
+  `).all(threadKey);
+
+  const subject = threadMsgs.find((m) => m.subject)?.subject || 'Geen onderwerp';
+  const safeName = subject.replace(/[^a-zA-Z0-9 ]/g, '_').slice(0, 50).trim() || 'thread';
+  const who = (m) => (m.direction === 'outbound' ? 'Ramon Brugman' : (m.contact_name || 'Onbekend'));
+  const fmtDate = (m) => {
+    const d = new Date(m.received_at);
+    return isNaN(d.getTime()) ? (m.received_at || '') : d.toLocaleString('nl-NL');
+  };
+
+  if (format === 'txt') {
+    const sep = '='.repeat(60);
+    let text = `Thread: ${subject}\n${threadMsgs.length} bericht${threadMsgs.length === 1 ? '' : 'en'}\n${sep}\n\n`;
+    for (const m of threadMsgs) {
+      text += `Van: ${who(m)}\n`;
+      text += `Datum: ${fmtDate(m)}\n`;
+      if (m.subject) text += `Onderwerp: ${m.subject}\n`;
+      text += `${'-'.repeat(40)}\n`;
+      text += `${m.body_text || m.snippet || '(geen inhoud)'}\n\n`;
+      text += `${sep}\n\n`;
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.txt"`);
+    return res.send(text);
+  }
+
+  // format === 'html'
+  let html = `<!DOCTYPE html><html lang="nl"><head><meta charset="utf-8"><title>${escapeHtmlForForward(subject)}</title>
+    <style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto;color:#333;}
+    .msg{margin:20px 0;padding:16px;border:1px solid #e5e7eb;border-radius:8px;}
+    .msg.outbound{border-left:4px solid #3b82f6;background:#f8faff;}
+    .msg.inbound{border-left:4px solid #e5e7eb;}
+    .meta{font-size:12px;color:#888;margin-bottom:8px;}
+    h1{font-size:18px;}</style></head><body>`;
+  html += `<h1>${escapeHtmlForForward(subject)}</h1><p style="color:#888;">${threadMsgs.length} bericht${threadMsgs.length === 1 ? '' : 'en'}</p><hr>`;
+  for (const m of threadMsgs) {
+    const cls = m.direction === 'outbound' ? 'outbound' : 'inbound';
+    html += `<div class="msg ${cls}">`;
+    html += `<div class="meta"><b>${escapeHtmlForForward(who(m))}</b> — ${escapeHtmlForForward(fmtDate(m))}</div>`;
+    html += m.body_html || `<p>${escapeHtmlForForward(m.body_text || m.snippet || '').replace(/\n/g, '<br>')}</p>`;
+    html += `</div>`;
+  }
+  html += `</body></html>`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}.html"`);
+  return res.send(html);
+});
+
 // POST /api/messages/:id/reply — verstuur een reply via Gmail API
 router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
   try {

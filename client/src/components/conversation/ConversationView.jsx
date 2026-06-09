@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMessage, useThread, useReplyMessage, useReplyWithMedia, useReplyEmailWithAttachments } from '../../hooks/useMessages.js';
 import EmailThread from './EmailThread.jsx';
 import ChatThread from './ChatThread.jsx';
@@ -31,6 +31,28 @@ export default function ConversationView({
   const replyEmailAttachMut = useReplyEmailWithAttachments();
   const toast = useToast();
   const [showSummary, setShowSummary] = useState(false);
+  const [showDownload, setShowDownload] = useState(false);
+  const downloadRef = useRef(null);
+
+  // Sluit het download-menu bij klik buiten of Escape
+  useEffect(() => {
+    if (!showDownload) return undefined;
+    function onDown(e) {
+      if (downloadRef.current && !downloadRef.current.contains(e.target)) setShowDownload(false);
+    }
+    function onKey(e) { if (e.key === 'Escape') setShowDownload(false); }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showDownload]);
+
+  const downloadThread = (format) => {
+    window.open(`/api/messages/${messageId}/thread-download?format=${format}`, '_blank');
+    setShowDownload(false);
+  };
 
   // Best-effort: markeer extern als gelezen zodra een conversatie geopend wordt
   // (laat het rode nummertje in WhatsApp / Gmail verdwijnen)
@@ -184,6 +206,34 @@ export default function ConversationView({
             ) : (m.contact_company || m.contact_email || m.contact_phone) ? (
               <div className="mt-0.5 truncate text-xs text-gray-500">
                 {[m.contact_company, m.contact_email, m.contact_phone].filter(Boolean).join(' · ')}
+              </div>
+            ) : null}
+          </div>
+          <div className="relative shrink-0" ref={downloadRef}>
+            <button
+              onClick={() => setShowDownload((v) => !v)}
+              title="Download thread"
+              aria-label="Download thread"
+              className={`grid h-9 w-9 place-items-center rounded-md transition-colors ${
+                showDownload ? 'bg-blue-50 text-blue-700' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+              }`}
+            >
+              <i className="fa-solid fa-download" />
+            </button>
+            {showDownload ? (
+              <div className="absolute right-0 z-50 mt-1 min-w-[220px] rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                <button
+                  onClick={() => downloadThread('txt')}
+                  className="block w-full rounded px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <i className="fa-solid fa-file-lines mr-2 text-gray-400" />Download als tekst (.txt)
+                </button>
+                <button
+                  onClick={() => downloadThread('html')}
+                  className="block w-full rounded px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <i className="fa-solid fa-file-code mr-2 text-gray-400" />Download als HTML
+                </button>
               </div>
             ) : null}
           </div>
