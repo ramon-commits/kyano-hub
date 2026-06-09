@@ -3,18 +3,18 @@ import './env.js';
 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import express from 'express';
 import cors from 'cors';
 
-import db from './db/init.js';
+import db, { DB_PATH } from './db/init.js';
 import { seed, cleanupDemoData } from './db/seed.js';
 import { startSnoozeCron } from './services/snooze-cron.js';
 import { startPoller } from './services/poller.js';
-import { startPurgeCron } from './services/purge-cron.js';
+import { startPurgeCron, purgeNow } from './services/purge-cron.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 
 import messagesRouter from './routes/messages.js';
@@ -113,6 +113,27 @@ cleanupDemoData();
     console.log(`🧹 ${rows.length} bericht(en) hersteld: waren door de auto-wake bug onterecht heropend → terug op done`);
   }
   db.prepare('INSERT INTO app_config (key, value) VALUES (?, ?)').run(MARKER_KEY, new Date().toISOString());
+})();
+
+// Eenmalige performance-cleanup: ruim oude body_html/body_text/logs op (tiered retention)
+// en compacteer daarna de database met VACUUM. Gated op een app_config-marker zodat de
+// relatief dure VACUUM maar één keer draait — daarna doet de purge-cron het onderhoud.
+(function perfCleanupV1() {
+  const MARKER_KEY = 'perf_cleanup_v1';
+  const seen = db.prepare('SELECT value FROM app_config WHERE key = ?').get(MARKER_KEY);
+  if (seen) return;
+  try {
+    const before = statSync(DB_PATH).size / 1048576;
+    console.log(`🧹 Eenmalige performance-cleanup (database ${before.toFixed(1)} MB)…`);
+    purgeNow();
+    db.exec('VACUUM');
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    const after = statSync(DB_PATH).size / 1048576;
+    console.log(`🧹 Cleanup klaar — database ${before.toFixed(1)} MB → ${after.toFixed(1)} MB`);
+    db.prepare('INSERT INTO app_config (key, value) VALUES (?, ?)').run(MARKER_KEY, new Date().toISOString());
+  } catch (e) {
+    console.error('Perf-cleanup faalde:', e.message);
+  }
 })();
 
 startSnoozeCron();

@@ -267,10 +267,18 @@ CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_messages_snoozed ON messages(snoozed_until) WHERE status = 'snoozed';
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_messages_received ON messages(received_at DESC);
+-- Composite indexen voor de gegroepeerde inbox-query (status-filter + sortering/joins).
+-- (channel_id, external_id) wordt al gedekt door idx_messages_external_per_channel.
+CREATE INDEX IF NOT EXISTS idx_messages_status_received ON messages(status, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_thread_status ON messages(thread_id, status);
+CREATE INDEX IF NOT EXISTS idx_messages_contact_status ON messages(contact_id, status);
+CREATE INDEX IF NOT EXISTS idx_messages_channel_status ON messages(channel_id, status);
 CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
 CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone);
 CREATE INDEX IF NOT EXISTS idx_interaction_logs_contact ON interaction_logs(contact_id);
 CREATE INDEX IF NOT EXISTS idx_interaction_logs_action ON interaction_logs(action);
+CREATE INDEX IF NOT EXISTS idx_interaction_logs_message ON interaction_logs(message_id);
+CREATE INDEX IF NOT EXISTS idx_interaction_logs_date ON interaction_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_message_projects ON message_projects(project_id);
 CREATE INDEX IF NOT EXISTS idx_contact_projects ON contact_projects(project_id);
 
