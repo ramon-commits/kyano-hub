@@ -49,7 +49,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
   if (search) params.search = search;
   if (statusFilter === 'urgent') params.priority = 'high';
 
-  const { data, isLoading } = useMessages(params);
+  const { data, isLoading, isError, error, refetch } = useMessages(params);
   const { data: pinnedData } = usePinnedMessages();
   const { data: stats } = useStats();
   const syncAll = useSyncAll();
@@ -202,7 +202,18 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
             ) : null}
 
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              {isLoading ? (
+              {isError ? (
+                <div className="p-8 text-center">
+                  <p className="font-medium text-red-600">Kon berichten niet laden</p>
+                  <p className="mt-1 text-sm text-gray-500">{error?.message || 'Onbekende fout'}</p>
+                  <button
+                    onClick={() => refetch()}
+                    className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700"
+                  >
+                    Opnieuw proberen
+                  </button>
+                </div>
+              ) : isLoading ? (
                 <div className="py-16"><LoadingSpinner label="Berichten laden…" /></div>
               ) : messages.length === 0 ? (
                 <EmptyState
