@@ -61,6 +61,28 @@ const MESSAGE_SELECT = `
   LEFT JOIN channels ch ON ch.id = m.channel_id
 `;
 
+// Lijst-view select: identiek aan MESSAGE_SELECT maar ZONDER body_html/body_text.
+// Die velden zijn alleen nodig bij het OPENEN van een bericht (GET /:id en /:id/thread),
+// niet in de inbox-lijst. Weglaten verkleint de response enorm (~969KB → ~50KB voor 50 rijen).
+const LIST_SELECT = `
+  SELECT
+    m.id, m.external_id, m.channel_id, m.contact_id, m.direction, m.subject, m.snippet,
+    m.status, m.priority, m.received_at, m.thread_id, m.snoozed_until,
+    m.done_at, m.done_note, m.done_category, m.attachments_json,
+    c.name AS contact_name,
+    c.company AS contact_company,
+    c.email AS contact_email,
+    c.phone AS contact_phone,
+    c.avatar_initials AS contact_initials,
+    c.avatar_color AS contact_color,
+    ch.type AS channel_type,
+    ch.label AS channel_label,
+    ch.account_email AS channel_account
+  FROM messages m
+  LEFT JOIN contacts c ON c.id = m.contact_id
+  LEFT JOIN channels ch ON ch.id = m.channel_id
+`;
+
 // GET /api/messages
 // Voor status='open' groeperen we per thread: 1 rij per conversatie met message_count.
 // Voor andere statussen (done/snoozed/etc) blijven we per-message tonen (logboek detail).
@@ -123,7 +145,7 @@ router.get('/', (req, res) => {
     // Stap 2 — haal full message rows op voor deze laatste-ids
     const placeholders = pageRowsMeta.map((_, i) => `@id${i}`).join(', ');
     const idParams = Object.fromEntries(pageRowsMeta.map((r, i) => [`id${i}`, r.latest_id]));
-    const fullRows = db.prepare(`${MESSAGE_SELECT} WHERE m.id IN (${placeholders})`).all(idParams);
+    const fullRows = db.prepare(`${LIST_SELECT} WHERE m.id IN (${placeholders})`).all(idParams);
 
     // Stap 3 — koppel thread_open_count en sorteer op received_at desc
     const countByLatest = new Map(pageRowsMeta.map((r) => [r.latest_id, r.thread_open_count]));
@@ -179,7 +201,7 @@ router.get('/', (req, res) => {
   }
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const sql = `${MESSAGE_SELECT} ${whereSql} ORDER BY m.received_at DESC LIMIT @limit OFFSET @offset`;
+  const sql = `${LIST_SELECT} ${whereSql} ORDER BY m.received_at DESC LIMIT @limit OFFSET @offset`;
 
   params.limit = limit;
   params.offset = offset;
