@@ -24,7 +24,7 @@ export default function ConversationView({
   onForward,
   onReplySent,
 }) {
-  const { data: m, isLoading } = useMessage(messageId);
+  const { data: m, isLoading, isError, error, refetch } = useMessage(messageId);
   const { data: thread } = useThread(messageId);
   const replyMut = useReplyMessage();
   const replyMediaMut = useReplyWithMedia();
@@ -60,6 +60,23 @@ export default function ConversationView({
     if (!messageId) return;
     api.post(`/messages/${messageId}/mark-read`).catch(() => { /* silent */ });
   }, [messageId]);
+
+  if (isError) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="p-8 text-center">
+          <p className="font-medium text-red-600">Kon bericht niet laden</p>
+          <p className="mt-1 text-sm text-gray-500">{error?.message || 'Onbekende fout'}</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700"
+          >
+            Opnieuw proberen
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || !m) {
     return (
