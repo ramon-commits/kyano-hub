@@ -3,7 +3,19 @@ import db from '../db/init.js';
 
 const router = Router();
 
+// Server-side cache (30s): de stats-badges veranderen traag en meerdere tabs/clients
+// vragen ze tegelijk op. Mutaties (done/snooze/…) invalidaten client-side; de cache
+// kan daardoor max 30s achterlopen op een net-afgehandeld bericht — acceptabel voor badges.
+let statsCache = null;
+let statsCacheTime = 0;
+const STATS_CACHE_MS = 30000;
+
 router.get('/', (_req, res) => {
+  const nowMs = Date.now();
+  if (statsCache && (nowMs - statsCacheTime) < STATS_CACHE_MS) {
+    return res.json(statsCache);
+  }
+
   // open_count en urgent_count tellen unieke CONVERSATIES (threads), niet losse berichten
   const openCount = db.prepare(`
     SELECT COUNT(DISTINCT COALESCE(thread_id, id)) AS n FROM messages WHERE status = 'open'
@@ -26,29 +38,32 @@ router.get('/', (_req, res) => {
     return daysUntil <= 7;
   }).length;
 
-  // Nudges count
-  const contactsWithLast = db.prepare(`
-    SELECT c.id, COALESCE(n.remind_after_days, 14) AS remind_after_days,
-      (SELECT MAX(received_at) FROM messages WHERE contact_id = c.id) AS last_message_at
-    FROM contacts c
-    LEFT JOIN nudge_settings n ON n.contact_id = c.id
-    WHERE COALESCE(n.is_active, 1) = 1
-  `).all();
-  const nudgesCount = contactsWithLast.filter((c) => {
-    if (!c.last_message_at) return false;
-    const last = new Date(c.last_message_at).getTime();
-    const days = Math.floor((Date.now() - last) / 86400000);
-    return days >= c.remind_after_days;
-  }).length;
+  // Nudges count — 1 query met GROUP BY i.p.v. een correlated subquery per contact
+  // (die voerde MAX(received_at) duizenden keren los uit en blokkeerde SQLite).
+  const nudgesCount = db.prepare(`
+    SELECT COUNT(*) AS n FROM (
+      SELECT c.id
+      FROM contacts c
+      LEFT JOIN nudge_settings ns ON ns.contact_id = c.id
+      LEFT JOIN messages m ON m.contact_id = c.id
+      WHERE COALESCE(ns.is_active, 1) = 1
+      GROUP BY c.id
+      HAVING MAX(m.received_at) IS NOT NULL
+        AND CAST((julianday('now') - julianday(MAX(m.received_at))) AS INTEGER) >= COALESCE(ns.remind_after_days, 14)
+    )
+  `).get().n;
 
-  res.json({
+  const result = {
     open_count: openCount,
     snoozed_count: snoozedCount,
     done_today: doneToday,
     urgent_count: urgentCount,
     birthdays_week: birthdaysWeek,
     nudges_count: nudgesCount,
-  });
+  };
+  statsCache = result;
+  statsCacheTime = nowMs;
+  res.json(result);
 });
 
 router.get('/daily-summary', (_req, res) => {
@@ -74,22 +89,23 @@ router.get('/daily-summary', (_req, res) => {
   const birthdaysToday = computed.filter((c) => c.days_until === 0);
   const birthdaysWeek = computed.filter((c) => c.days_until > 0 && c.days_until <= 7).sort((a, b) => a.days_until - b.days_until);
 
-  // Top-3 nudges (langst niet gesproken, default threshold 14)
-  const nudgeRows = db.prepare(`
+  // Top-3 nudges (langst niet gesproken, default threshold 14) — filtering/sortering
+  // gebeurt nu volledig in SQL (GROUP BY/HAVING/ORDER BY) i.p.v. een correlated subquery.
+  const nudges = db.prepare(`
     SELECT c.id, c.name, c.company, c.avatar_initials, c.avatar_color,
-      COALESCE(n.remind_after_days, 14) AS remind_after_days,
-      (SELECT MAX(received_at) FROM messages WHERE contact_id = c.id) AS last_message_at
+      COALESCE(ns.remind_after_days, 14) AS remind_after_days,
+      MAX(m.received_at) AS last_message_at,
+      CAST((julianday('now') - julianday(MAX(m.received_at))) AS INTEGER) AS days_since
     FROM contacts c
-    LEFT JOIN nudge_settings n ON n.contact_id = c.id
-    WHERE COALESCE(n.is_active, 1) = 1
+    LEFT JOIN nudge_settings ns ON ns.contact_id = c.id
+    LEFT JOIN messages m ON m.contact_id = c.id
+    WHERE COALESCE(ns.is_active, 1) = 1
+    GROUP BY c.id
+    HAVING last_message_at IS NOT NULL
+      AND days_since >= COALESCE(ns.remind_after_days, 14)
+    ORDER BY days_since DESC
+    LIMIT 3
   `).all();
-  const nudges = nudgeRows.map((c) => {
-    if (!c.last_message_at) return null;
-    const last = new Date(c.last_message_at).getTime();
-    const daysSince = Math.floor((Date.now() - last) / 86400000);
-    if (daysSince < c.remind_after_days) return null;
-    return { ...c, days_since: daysSince };
-  }).filter(Boolean).sort((a, b) => b.days_since - a.days_since).slice(0, 3);
 
   res.json({
     date: today.toISOString().slice(0, 10),
