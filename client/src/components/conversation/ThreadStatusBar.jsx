@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function ThreadStatusBar({ onSnooze, onDone, onSchedule, onUrgent, onArchive, onForward, onFollowUp, showFollowUp, currentPriority }) {
+export default function ThreadStatusBar({ onSnooze, onDone, onSchedule, onUrgent, onArchive, onForward, onFollowUp, showFollowUp, currentPriority, onPlanFollowUp, onCreateTodo, onSpamBlock, isEmail }) {
   const isUrgent = currentPriority === 'high';
   const [followUpLoading, setFollowUpLoading] = useState(false);
 
@@ -57,6 +57,34 @@ export default function ThreadStatusBar({ onSnooze, onDone, onSchedule, onUrgent
       <Btn onClick={onArchive} hover="hover:bg-gray-100 hover:text-gray-900 hover:border-gray-300">
         <i className="fa-solid fa-box-archive mr-1.5" />Archiveer
       </Btn>
+
+      {onPlanFollowUp ? (
+        <Btn
+          onClick={onPlanFollowUp}
+          hover="hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200"
+          title="Plan een automatische follow-up als ze niet reageren"
+        >
+          <i className="fa-solid fa-clock-rotate-left mr-1.5" />Plan follow-up
+        </Btn>
+      ) : null}
+      {onCreateTodo ? (
+        <Btn
+          onClick={onCreateTodo}
+          hover="hover:bg-orange-50 hover:text-orange-700 hover:border-orange-200"
+          title="Maak een to-do van dit bericht — origineel blijft staan"
+        >
+          <i className="fa-solid fa-list-check mr-1.5" />Maak to-do
+        </Btn>
+      ) : null}
+      {isEmail && onSpamBlock ? (
+        <Btn
+          onClick={onSpamBlock}
+          hover="hover:bg-red-50 hover:text-red-700 hover:border-red-200"
+          title="Markeer als spam in Gmail, blokkeer de afzender en archiveer al zijn berichten"
+        >
+          <i className="fa-solid fa-shield-halved mr-1.5" />Spam + blokkeer
+        </Btn>
+      ) : null}
     </div>
   );
 }

@@ -44,6 +44,10 @@ const SAFE_ALTERS = [
   "ALTER TABLE messages ADD COLUMN attachments_json TEXT",
   // Snooze tijdstip — nodig voor "wacht op antwoord" follow-up detectie
   "ALTER TABLE messages ADD COLUMN snoozed_at TEXT",
+  // Slimme follow-up: hoe de geplande follow-up wordt opgesteld ('ai' | 'custom')
+  // en (voor custom) de vooraf geschreven tekst / na cron-run de klaargezette draft.
+  "ALTER TABLE messages ADD COLUMN follow_up_mode TEXT",
+  "ALTER TABLE messages ADD COLUMN follow_up_custom_text TEXT",
   // Stijlprofiel velden voor automatische stijl-analyse
   "ALTER TABLE style_profiles ADD COLUMN profile_text TEXT",
   "ALTER TABLE style_profiles ADD COLUMN email_count INTEGER DEFAULT 0",

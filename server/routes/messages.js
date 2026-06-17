@@ -379,6 +379,158 @@ router.post('/:id/report-spam', async (req, res) => {
   res.json({ ok: true, gmail_ok: gmailOk, archived, blocked_pattern: pattern || null });
 });
 
+// POST /api/messages/:id/spam-and-block — Gmail spam + blokkeer afzender + archiveer ál zijn berichten
+// Combineert de drie acties in één call en geeft het volgende open bericht terug (server-side advance).
+router.post('/:id/spam-and-block', async (req, res) => {
+  const msg = db.prepare(`
+    SELECT m.id, m.external_id, m.channel_id, m.contact_id,
+           c.email AS contact_email, ch.type AS channel_type
+    FROM messages m
+    LEFT JOIN contacts c ON c.id = m.contact_id
+    LEFT JOIN channels ch ON ch.id = m.channel_id
+    WHERE m.id = ?
+  `).get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+
+  // 1. Markeer als spam in Gmail (alleen email)
+  let gmailOk = false;
+  if (msg.channel_type === 'email' && msg.external_id && msg.channel_id) {
+    const r = await markAsSpamInGmail(msg.channel_id, msg.external_id);
+    gmailOk = !!r?.ok;
+  }
+
+  // 2. Blokkeer afzender (sender_rules — zelfde conventie als /report-spam)
+  let blockedPattern = null;
+  if (msg.contact_email) {
+    const lower = msg.contact_email.toLowerCase();
+    const existing = db.prepare(`SELECT id FROM sender_rules WHERE lower(email_pattern) = ? AND rule = 'block'`).get(lower);
+    if (!existing) {
+      db.prepare(`INSERT INTO sender_rules (id, email_pattern, rule) VALUES (?, ?, 'block')`).run(uuid(), lower);
+    }
+    blockedPattern = lower;
+  }
+
+  // 3. Archiveer alle nog-zichtbare berichten van deze afzender
+  let archived = 0;
+  if (msg.contact_id) {
+    archived = db.prepare(`
+      UPDATE messages SET status = 'archived', updated_at = datetime('now')
+      WHERE contact_id = ? AND status IN ('open', 'snoozed', 'waiting')
+    `).run(msg.contact_id).changes;
+  } else {
+    archived = db.prepare(`
+      UPDATE messages SET status = 'archived', updated_at = datetime('now')
+      WHERE id = ? AND status IN ('open', 'snoozed', 'waiting')
+    `).run(msg.id).changes;
+  }
+  logInteraction(msg.id, 'archived', 'Spam + geblokkeerd');
+
+  // 4. Volgende open bericht (urgent eerst, dan nieuwste)
+  const next = db.prepare(`
+    SELECT id FROM messages
+    WHERE status = 'open' AND id != ?
+    ORDER BY (priority = 'high') DESC, received_at DESC
+    LIMIT 1
+  `).get(msg.id);
+
+  res.json({ ok: true, gmail_ok: gmailOk, archived, blocked_pattern: blockedPattern, next_id: next?.id || null });
+});
+
+// POST /api/messages/:id/create-todo — maak een to-do met de info van dit bericht als context.
+// Het originele bericht blijft staan; de to-do is een losse open regel in het todo-1 kanaal.
+router.post('/:id/create-todo', (req, res) => {
+  const { title, description, due_date } = req.body || {};
+  const msg = db.prepare(`
+    SELECT m.subject, m.snippet, c.name AS contact_name
+    FROM messages m LEFT JOIN contacts c ON c.id = m.contact_id
+    WHERE m.id = ?
+  `).get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+
+  const todoTitle = (title && title.trim())
+    || `Opvolgen: ${msg.contact_name || 'contact'} - ${msg.subject || (msg.snippet || '').slice(0, 50)}`;
+  const todoDesc = (description && description.trim())
+    || `Vanuit bericht: ${msg.subject || ''}\nVan: ${msg.contact_name || 'onbekend'}\n\n${msg.snippet || ''}`;
+
+  // Vind of maak het "Ramon" contact (voor de avatar) — zelfde patroon als /todo
+  let ramon = db.prepare("SELECT id FROM contacts WHERE email = 'ramon@endlessminds.nl'").get();
+  if (!ramon) {
+    ramon = { id: uuid() };
+    db.prepare("INSERT INTO contacts (id, name, email, avatar_initials, avatar_color) VALUES (?, 'Ramon', 'ramon@endlessminds.nl', 'RB', '#3b82f6')").run(ramon.id);
+  }
+
+  // Deadline is puur informatief (in snippet + body), net als de /todo route.
+  let snippetText = todoTitle;
+  let bodyText = todoDesc;
+  if (due_date) {
+    const d = new Date(due_date);
+    if (!isNaN(d.getTime())) {
+      const label = d.toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' });
+      snippetText = `${todoTitle} · Deadline: ${label}`;
+      bodyText = `${bodyText}\n\nDeadline: ${label}`;
+    }
+  }
+
+  const todoId = uuid();
+  db.prepare(`
+    INSERT INTO messages (id, channel_id, contact_id, direction, subject, snippet, body_text, status, priority, received_at, created_at, updated_at)
+    VALUES (?, 'todo-1', ?, 'inbound', ?, ?, ?, 'open', 'medium', datetime('now'), datetime('now'), datetime('now'))
+  `).run(todoId, ramon.id, todoTitle, snippetText, bodyText);
+
+  res.json({ ok: true, todo_id: todoId, title: todoTitle });
+});
+
+// POST /api/messages/:id/schedule-follow-up — plan een automatische follow-up.
+// Zet de thread op 'waiting' met een wektijd; de snooze-cron stelt na X dagen zónder
+// reactie de follow-up klaar (AI of vooraf geschreven tekst).
+router.post('/:id/schedule-follow-up', (req, res) => {
+  const { days, mode, custom_text } = req.body || {};
+  const numDays = Number(days);
+  if (!numDays || numDays <= 0) return res.status(400).json({ error: 'days (>0) is verplicht' });
+  if (!['ai', 'custom'].includes(mode)) return res.status(400).json({ error: "mode moet 'ai' of 'custom' zijn" });
+  if (mode === 'custom' && !(custom_text && custom_text.trim())) {
+    return res.status(400).json({ error: 'custom_text is verplicht bij mode=custom' });
+  }
+
+  const msg = db.prepare('SELECT id, thread_id FROM messages WHERE id = ?').get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+
+  const followUpAt = new Date(Date.now() + numDays * 86400000).toISOString();
+  const text = mode === 'custom' ? custom_text.trim() : null;
+
+  const ids = openIdsInThread(req.params.id);
+  const stmt = db.prepare(`
+    UPDATE messages SET
+      status = 'waiting',
+      snoozed_until = ?,
+      snoozed_at = datetime('now'),
+      follow_up_mode = ?,
+      follow_up_custom_text = ?,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `);
+  const tx = db.transaction(() => {
+    let n = 0;
+    for (const id of ids) n += stmt.run(followUpAt, mode, text, id).changes;
+    return n;
+  });
+  let changed = tx();
+  if (changed === 0) {
+    changed = stmt.run(followUpAt, mode, text, req.params.id).changes;
+    if (changed === 0) return res.status(404).json({ error: 'Message not found' });
+  }
+  for (const id of ids) logInteraction(id, 'snoozed', `Follow-up gepland over ${numDays} dag(en)`);
+
+  const next = db.prepare(`
+    SELECT id FROM messages
+    WHERE status = 'open' AND id != ?
+    ORDER BY (priority = 'high') DESC, received_at DESC
+    LIMIT 1
+  `).get(msg.id);
+
+  res.json({ ok: true, follow_up_at: followUpAt, next_id: next?.id || null });
+});
+
 // GET /api/messages/:id/thread-summary — basale samenvatting (zonder AI)
 router.get('/:id/thread-summary', async (req, res) => {
   const msg = db.prepare('SELECT id, thread_id FROM messages WHERE id = ?').get(req.params.id);

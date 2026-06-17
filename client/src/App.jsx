@@ -310,6 +310,21 @@ export default function App() {
     } catch (e) { toast.error(e.message); }
   };
 
+  // Spam + blokkeer (één server-call): Gmail spam + sender_rule + archiveer alles van deze afzender.
+  const handleSpamBlock = async (m) => {
+    const ok = confirm(`Markeer als spam en blokkeer ${m.contact_name || 'deze afzender'}?\n\nAlle bestaande berichten van deze afzender worden gearchiveerd.`);
+    if (!ok) return;
+    try {
+      const r = await api.post(`/messages/${m.id}/spam-and-block`);
+      toast.success(`Geblokkeerd. ${r.archived} bericht${r.archived === 1 ? '' : 'en'} gearchiveerd.`, 'Spam + geblokkeerd');
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      if (selectedMessageId === m.id) advanceSelection(m.id);
+    } catch (e) {
+      toast.error(e.message || 'Spam + blokkeer mislukt');
+    }
+  };
+
   const onBulkBlock = async (ids, selectedMessages) => {
     if (!ids?.length) return false;
     const emails = [...new Set((selectedMessages || []).map((m) => m.contact_email).filter(Boolean))];
@@ -456,6 +471,8 @@ export default function App() {
           onArchive={onArchive}
           onForward={handleForward}
           onReplySent={onReplySent}
+          onSpamBlock={handleSpamBlock}
+          onAdvance={advanceSelection}
         />
       );
     }
