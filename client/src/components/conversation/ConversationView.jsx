@@ -7,7 +7,6 @@ import ReplyComposer from './ReplyComposer.jsx';
 import ThreadStatusBar from './ThreadStatusBar.jsx';
 import ThreadSummaryPanel from './ThreadSummaryPanel.jsx';
 import ThreadAiSummaryCard from './ThreadAiSummaryCard.jsx';
-import CreateTodoModal from '../modals/CreateTodoModal.jsx';
 import ScheduleFollowUpModal from '../modals/ScheduleFollowUpModal.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import ChannelBadge from '../shared/ChannelBadge.jsx';
@@ -28,6 +27,7 @@ export default function ConversationView({
   onReplySent,
   onSpamBlock,
   onAdvance,
+  onCreateTodo,
 }) {
   const { data: m, isLoading, isError, error, refetch } = useMessage(messageId);
   const { data: thread } = useThread(messageId);
@@ -38,9 +38,7 @@ export default function ConversationView({
   const qc = useQueryClient();
   const [showSummary, setShowSummary] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
-  const [showTodoModal, setShowTodoModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
-  const [todoSubmitting, setTodoSubmitting] = useState(false);
   const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
   const downloadRef = useRef(null);
 
@@ -193,24 +191,16 @@ export default function ConversationView({
   const lastThreadMsg = threadMessages[threadMessages.length - 1];
   const showFollowUp = !!(lastThreadMsg && lastThreadMsg.direction === 'outbound');
 
-  // Pre-fill voor de to-do modal — zelfde format als de backend default.
-  const defaultTodoTitle = `Opvolgen: ${m.contact_name || 'contact'} - ${m.subject || (m.snippet || '').slice(0, 50)}`;
+  // Pre-fill voor de to-do — hergebruikt de ComposeModal to-do tab (zelfde flow als '+' / 't').
+  const defaultTodoTitle = `Opvolgen: ${m.contact_name || 'contact'} - ${m.subject || (m.snippet || '').slice(0, 60)}`;
+  const defaultTodoDesc = `Vanuit bericht: ${m.subject || ''}\nVan: ${m.contact_name || ''}\n\n${m.snippet || ''}`.trim();
 
-  const handleCreateTodo = async ({ title, due_date }) => {
-    setTodoSubmitting(true);
-    try {
-      const r = await api.post(`/messages/${messageId}/create-todo`, { title, due_date });
-      toast.success('To-do gemaakt', 'Gelukt');
-      setShowTodoModal(false);
-      qc.invalidateQueries({ queryKey: ['messages'] });
-      qc.invalidateQueries({ queryKey: ['stats'] });
-      return r;
-    } catch (e) {
-      toast.error(e.message || 'To-do maken mislukt');
-      return null;
-    } finally {
-      setTodoSubmitting(false);
-    }
+  const handleCreateTodo = () => {
+    onCreateTodo?.({
+      todoTitle: defaultTodoTitle,
+      todoDesc: defaultTodoDesc,
+      sourceMessageId: messageId,
+    });
   };
 
   const handleScheduleFollowUp = async ({ days, mode, custom_text }) => {
@@ -390,7 +380,7 @@ export default function ConversationView({
           showFollowUp={showFollowUp}
           currentPriority={m.priority}
           onPlanFollowUp={() => setShowFollowUpModal(true)}
-          onCreateTodo={() => setShowTodoModal(true)}
+          onCreateTodo={handleCreateTodo}
           onSpamBlock={onSpamBlock ? handleSpamAndBlock : null}
           isEmail={isEmail}
         />
@@ -400,13 +390,6 @@ export default function ConversationView({
         <ThreadSummaryPanel messageId={messageId} onClose={() => setShowSummary(false)} />
       ) : null}
 
-      <CreateTodoModal
-        open={showTodoModal}
-        onClose={() => setShowTodoModal(false)}
-        defaultTitle={defaultTodoTitle}
-        onSubmit={handleCreateTodo}
-        submitting={todoSubmitting}
-      />
       <ScheduleFollowUpModal
         open={showFollowUpModal}
         onClose={() => setShowFollowUpModal(false)}

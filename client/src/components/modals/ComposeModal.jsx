@@ -15,7 +15,14 @@ const CHANNEL_META = {
 
 const ALL_CHANNEL_TYPES = ['email', 'whatsapp', 'linkedin', 'instagram'];
 
-export default function ComposeModal({ open, onClose, initialChannel = null }) {
+export default function ComposeModal({
+  open,
+  onClose,
+  initialChannel = null,
+  prefillTodoTitle = '',
+  prefillTodoDesc = '',
+  sourceMessageId = null,
+}) {
   const { data: channelsData } = useChannels();
   const toast = useToast();
 
@@ -65,12 +72,12 @@ export default function ComposeModal({ open, onClose, initialChannel = null }) {
     setSending(false);
     setAiLoading(null);
     setShowLangPicker(false);
-    setTodoTitle('');
-    setTodoDesc('');
+    setTodoTitle(prefillTodoTitle || '');
+    setTodoDesc(prefillTodoDesc || '');
     setTodoDate('');
     setTodoTime('');
     setTodoPriority('medium');
-  }, [open, initialChannel]);
+  }, [open, initialChannel, prefillTodoTitle, prefillTodoDesc]);
 
   // Focus de titel zodra de to-do modus actief is (snelle 't' flow)
   useEffect(() => {
@@ -238,6 +245,7 @@ export default function ComposeModal({ open, onClose, initialChannel = null }) {
         description: todoDesc.trim() || null,
         due_date,
         priority: todoPriority,
+        source_message_id: sourceMessageId || null,
       });
       toast.success('To-do toegevoegd');
       onClose?.();

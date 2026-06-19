@@ -1332,8 +1332,9 @@ router.post('/compose', upload.array('files', 10), async (req, res, next) => {
 // Een to-do is gewoon een message; alle inbox-acties (snooze/done/pin/urgent) werken.
 router.post('/todo', (req, res) => {
   try {
-    const { title, description, due_date, priority } = req.body || {};
+    const { title, description, due_date, priority, source_message_id } = req.body || {};
     if (!title?.trim()) return res.status(400).json({ error: 'title is required' });
+    const sourceId = source_message_id || null;
 
     const id = uuid();
 
@@ -1359,9 +1360,11 @@ router.post('/todo', (req, res) => {
       }
     }
 
+    // source_message_id (optioneel) bewaren we in thread_id zodat de link naar het
+    // oorspronkelijke bericht behouden blijft.
     db.prepare(`
-      INSERT INTO messages (id, channel_id, contact_id, direction, subject, snippet, body_text, status, priority, received_at, created_at, updated_at)
-      VALUES (?, 'todo-1', ?, 'inbound', ?, ?, ?, 'open', ?, datetime('now'), datetime('now'), datetime('now'))
+      INSERT INTO messages (id, channel_id, contact_id, direction, subject, snippet, body_text, status, priority, received_at, thread_id, created_at, updated_at)
+      VALUES (?, 'todo-1', ?, 'inbound', ?, ?, ?, 'open', ?, datetime('now'), ?, datetime('now'), datetime('now'))
     `).run(
       id,
       ramonContact.id,
@@ -1369,6 +1372,7 @@ router.post('/todo', (req, res) => {
       snippetText,
       bodyText,
       priority || 'medium',
+      sourceId,
     );
 
     res.json({ ok: true, id, title: title.trim() });

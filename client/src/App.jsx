@@ -93,6 +93,19 @@ export default function App() {
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeChannel, setComposeChannel] = useState(null);
+  const [composeData, setComposeData] = useState(null);
+
+  // Open de ComposeModal. Met optionele prefill voor de to-do-tab (bv. vanuit een bericht).
+  const openCompose = useCallback((prefill = null) => {
+    setComposeChannel(prefill?.initialChannel || null);
+    setComposeData(prefill || null);
+    setComposeOpen(true);
+  }, []);
+  const closeCompose = useCallback(() => {
+    setComposeOpen(false);
+    setComposeChannel(null);
+    setComposeData(null);
+  }, []);
 
   const toast = useToast();
   // Houd een ref-pointer naar toast zodat useCallback's (zoals advanceSelection) hem kunnen gebruiken
@@ -373,14 +386,12 @@ export default function App() {
       },
       n: () => {
         if (composeOpen) return false;
-        setComposeChannel(null);
-        setComposeOpen(true);
+        openCompose();
         return true;
       },
       t: () => {
         if (composeOpen) return false;
-        setComposeChannel('todo');
-        setComposeOpen(true);
+        openCompose({ initialChannel: 'todo' });
         return true;
       },
       k: (e) => {
@@ -473,6 +484,7 @@ export default function App() {
           onReplySent={onReplySent}
           onSpamBlock={handleSpamBlock}
           onAdvance={advanceSelection}
+          onCreateTodo={(prefill) => openCompose({ initialChannel: 'todo', ...prefill })}
         />
       );
     }
@@ -497,7 +509,7 @@ export default function App() {
             onBulkArchive={onBulkArchive}
             onBulkBlock={onBulkBlock}
             onForward={handleForward}
-            onCompose={() => { setComposeChannel(null); setComposeOpen(true); }}
+            onCompose={() => openCompose()}
             selectedId={selectedMessageId}
           />
         );
@@ -550,7 +562,7 @@ export default function App() {
         <Sidebar
           active={view}
           onSelect={(id) => { setView(id); setSelectedMessageId(null); }}
-          onCompose={() => { setComposeChannel(null); setComposeOpen(true); }}
+          onCompose={() => openCompose()}
         />
         <main className="flex flex-1 flex-col overflow-hidden">
           <WelcomeScreen onGoToSettings={() => setView('instellingen')} />
@@ -564,7 +576,7 @@ export default function App() {
       <Sidebar
         active={view}
         onSelect={(id) => { setView(id); setSelectedMessageId(null); }}
-        onCompose={() => { setComposeChannel(null); setComposeOpen(true); }}
+        onCompose={() => openCompose()}
       />
 
       <main className="flex flex-1 flex-col overflow-hidden">
@@ -620,7 +632,14 @@ export default function App() {
         onOpenContact={(c) => setSelectedContactId(c.id)}
       />
 
-      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} initialChannel={composeChannel} />
+      <ComposeModal
+        open={composeOpen}
+        onClose={closeCompose}
+        initialChannel={composeChannel}
+        prefillTodoTitle={composeData?.todoTitle}
+        prefillTodoDesc={composeData?.todoDesc}
+        sourceMessageId={composeData?.sourceMessageId}
+      />
     </div>
   );
 }
