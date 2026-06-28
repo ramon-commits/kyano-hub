@@ -38,7 +38,7 @@ function MetricPillMini({ label, value, color, active, onClick, hide }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onArchive, onPin, onUnpin, onForward, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onCompose, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onMarkSpam, onArchive, onPin, onUnpin, onForward, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onBulkSpam, onCompose, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(50);
@@ -242,6 +242,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
                       onSchedule={onSchedule}
                       onArchive={onArchive}
                       onBlock={onBlock}
+                      onMarkSpam={onMarkSpam}
                       onPin={onPin}
                       onForward={onForward}
                       selectable
@@ -278,6 +279,10 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
               const ok = await onBulkBlock?.([...selection.selectedIds], selectedMessages);
               if (ok !== false) selection.clear();
             }}
+            onSpam={onBulkSpam ? async () => {
+              const ok = await onBulkSpam([...selection.selectedIds], selectedMessages);
+              if (ok !== false) selection.clear();
+            } : undefined}
             onClear={selection.clear}
           />
         </div>

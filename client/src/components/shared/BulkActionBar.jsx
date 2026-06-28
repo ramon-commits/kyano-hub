@@ -1,4 +1,4 @@
-export default function BulkActionBar({ count, onSnooze, onDone, onArchive, onBlock, onClear, busy }) {
+export default function BulkActionBar({ count, onSnooze, onDone, onArchive, onBlock, onSpam, onClear, busy }) {
   if (!count) return null;
 
   return (
@@ -19,6 +19,16 @@ export default function BulkActionBar({ count, onSnooze, onDone, onArchive, onBl
         <BulkBtn onClick={onDone} disabled={busy} title="Markeer alle afgehandeld (E)"><i className="fa-solid fa-circle-check mr-1.5" />Done</BulkBtn>
         <BulkBtn onClick={onArchive} disabled={busy} title="Archiveer alle (#)"><i className="fa-solid fa-trash mr-1.5" />Archiveer</BulkBtn>
         <BulkBtn onClick={onBlock} disabled={busy} title="Blokkeer alle afzenders"><i className="fa-solid fa-ban mr-1.5" />Blokkeer</BulkBtn>
+        {onSpam ? (
+          <button
+            onClick={onSpam}
+            disabled={busy}
+            title="Markeer alle als spam (Gmail spam + blokkeer)"
+            className="rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <i className="fa-solid fa-shield-halved mr-1.5" />Spam ({count})
+          </button>
+        ) : null}
 
         <span className="mx-1 h-5 w-px bg-white/20" />
 

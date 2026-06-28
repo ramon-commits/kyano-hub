@@ -130,6 +130,14 @@ function findSenderRule(senderEmail) {
 
 // ===== Persist a Gmail message =====
 function persistMessage(channel, msg) {
+  // Skip berichten die Gmail zelf al als SPAM/TRASH heeft gelabeld — die horen
+  // nooit in de inbox. Vooral relevant voor incrementalSync (history.list kent
+  // geen query-filter, dus dit is de enige plek waar we ze kunnen wegfilteren).
+  const msgLabels = Array.isArray(msg.labelIds) ? msg.labelIds : [];
+  if (msgLabels.includes('SPAM') || msgLabels.includes('TRASH')) {
+    return { inserted: false, skipped: true, reason: 'spam_label' };
+  }
+
   const payload = msg.payload || {};
   const headers = payload.headers || [];
 
@@ -147,8 +155,7 @@ function persistMessage(channel, msg) {
   //   outbound → altijd 'archived' (al verzonden)
   //   inbound + UNREAD label → 'open' (komt in inbox)
   //   inbound zonder UNREAD → 'archived' (al gelezen in Gmail, niet meer actie nodig)
-  const labelIds = Array.isArray(msg.labelIds) ? msg.labelIds : [];
-  const isUnread = labelIds.includes('UNREAD');
+  const isUnread = msgLabels.includes('UNREAD');
   let status = isOutbound ? 'archived' : (isUnread ? 'open' : 'archived');
 
   // Sender rules: block / newsletter / info → forceer archived (of skip bij block)
@@ -314,7 +321,7 @@ async function initialSync(channel, client) {
   const { data: list } = await gmail.users.messages.list({
     userId: 'me',
     maxResults: INITIAL_LIMIT,
-    q: 'is:unread label:inbox',
+    q: 'is:unread label:inbox -in:spam -in:trash',
   });
 
   const messages = list.messages || [];

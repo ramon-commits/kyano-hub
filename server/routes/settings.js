@@ -79,6 +79,19 @@ router.post('/sender-rules', (req, res) => {
   res.status(201).json({ ok: true, id, rule, email_pattern });
 });
 
+// Verwijder blokkade(s) op basis van email-adres (voor "ongedaan maken" na spam-melden).
+// Verwijdert zowel de exacte-adres-regel als de domein-regel die op dit adres zou matchen.
+router.delete('/sender-rules/by-email/:email', (req, res) => {
+  const email = decodeURIComponent(req.params.email || '').toLowerCase();
+  if (!email) return res.status(400).json({ error: 'email is verplicht' });
+  const domain = email.includes('@') ? '@' + email.split('@')[1] : null;
+  const r = db.prepare(`
+    DELETE FROM sender_rules
+    WHERE rule = 'block' AND (lower(email_pattern) = ? OR (? IS NOT NULL AND lower(email_pattern) = ?))
+  `).run(email, domain, domain);
+  res.json({ ok: true, deleted: r.changes });
+});
+
 router.delete('/sender-rules/:id', (req, res) => {
   const r = db.prepare('DELETE FROM sender_rules WHERE id = ?').run(req.params.id);
   if (r.changes === 0) return res.status(404).json({ error: 'Rule not found' });

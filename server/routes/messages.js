@@ -410,19 +410,17 @@ router.post('/:id/spam-and-block', async (req, res) => {
     blockedPattern = lower;
   }
 
-  // 3. Archiveer alle nog-zichtbare berichten van deze afzender
-  let archived = 0;
-  if (msg.contact_id) {
-    archived = db.prepare(`
-      UPDATE messages SET status = 'archived', updated_at = datetime('now')
-      WHERE contact_id = ? AND status IN ('open', 'snoozed', 'waiting')
-    `).run(msg.contact_id).changes;
-  } else {
-    archived = db.prepare(`
-      UPDATE messages SET status = 'archived', updated_at = datetime('now')
-      WHERE id = ? AND status IN ('open', 'snoozed', 'waiting')
-    `).run(msg.id).changes;
+  // 3. Archiveer alle nog-zichtbare berichten van deze afzender.
+  //    Bewaar de geraakte ids zodat de client een "ongedaan maken" kan aanbieden.
+  const archivedRows = msg.contact_id
+    ? db.prepare(`SELECT id FROM messages WHERE contact_id = ? AND status IN ('open', 'snoozed', 'waiting')`).all(msg.contact_id)
+    : db.prepare(`SELECT id FROM messages WHERE id = ? AND status IN ('open', 'snoozed', 'waiting')`).all(msg.id);
+  const archivedIds = archivedRows.map((r) => r.id);
+  if (archivedIds.length) {
+    const placeholders = archivedIds.map(() => '?').join(',');
+    db.prepare(`UPDATE messages SET status = 'archived', updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...archivedIds);
   }
+  const archived = archivedIds.length;
   logInteraction(msg.id, 'archived', 'Spam + geblokkeerd');
 
   // 4. Volgende open bericht (urgent eerst, dan nieuwste)
@@ -433,7 +431,7 @@ router.post('/:id/spam-and-block', async (req, res) => {
     LIMIT 1
   `).get(msg.id);
 
-  res.json({ ok: true, gmail_ok: gmailOk, archived, blocked_pattern: blockedPattern, next_id: next?.id || null });
+  res.json({ ok: true, gmail_ok: gmailOk, archived, archived_ids: archivedIds, blocked_pattern: blockedPattern, next_id: next?.id || null });
 });
 
 // POST /api/messages/:id/create-todo — maak een to-do met de info van dit bericht als context.

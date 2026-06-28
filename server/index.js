@@ -136,6 +136,47 @@ cleanupDemoData();
   }
 })();
 
+// Eenmalige spam-cleanup: berichten die nu in de DB als open/snoozed staan maar in
+// Gmail het SPAM-label hebben → archiveren. Draait async (blokkeert de boot niet) en
+// is gegated op een app_config-marker zodat het maar één keer gebeurt.
+(async function spamCleanupV1() {
+  const MARKER_KEY = 'spam_cleanup_v1';
+  if (db.prepare('SELECT value FROM app_config WHERE key = ?').get(MARKER_KEY)) return;
+
+  try {
+    const { google } = await import('googleapis');
+    const { getClient } = await import('./services/gmail-oauth.js');
+    const emailChannels = db.prepare("SELECT id FROM channels WHERE type = 'email'").all();
+    console.log('🧹 Eenmalige spam-cleanup…');
+
+    for (const ch of emailChannels) {
+      try {
+        const client = getClient(ch.id);
+        if (!client) continue;
+        const gmail = google.gmail({ version: 'v1', auth: client });
+
+        const { data } = await gmail.users.messages.list({ userId: 'me', q: 'in:spam', maxResults: 500 });
+        const spamIds = (data.messages || []).map((m) => m.id);
+        if (spamIds.length === 0) continue;
+
+        const placeholders = spamIds.map(() => '?').join(',');
+        const result = db.prepare(`
+          UPDATE messages SET status = 'archived', updated_at = datetime('now')
+          WHERE channel_id = ? AND external_id IN (${placeholders})
+            AND status IN ('open', 'snoozed', 'waiting')
+        `).run(ch.id, ...spamIds);
+        if (result.changes) console.log(`  ${ch.id}: ${result.changes} spam-bericht(en) gearchiveerd`);
+      } catch (e) {
+        console.log(`  ${ch.id}: spam-cleanup faalde: ${e.message}`);
+      }
+    }
+
+    db.prepare("INSERT INTO app_config (key, value) VALUES (?, ?)").run(MARKER_KEY, new Date().toISOString());
+  } catch (e) {
+    console.error('Spam-cleanup faalde:', e.message);
+  }
+})();
+
 startSnoozeCron();
 startPoller();
 startPurgeCron();

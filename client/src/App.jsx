@@ -338,6 +338,58 @@ export default function App() {
     }
   };
 
+  // Snel "spam" vanuit de inbox-rij: één klik → Gmail spam + blokkeer afzender +
+  // archiveer al zijn berichten. Geen confirm (dat is het hele punt), maar wél een
+  // "ongedaan maken" die de blokkade opheft en de gearchiveerde berichten herstelt.
+  const handleMarkSpam = async (m) => {
+    try {
+      const r = await api.post(`/messages/${m.id}/spam-and-block`);
+      const undo = {
+        label: 'Ongedaan maken',
+        onClick: async () => {
+          try {
+            if (m.contact_email) await api.delete(`/settings/sender-rules/by-email/${encodeURIComponent(m.contact_email)}`);
+            if (r.archived_ids?.length) await bulkReopenMut.mutateAsync({ ids: r.archived_ids });
+            qc.invalidateQueries({ queryKey: ['messages'] });
+            qc.invalidateQueries({ queryKey: ['stats'] });
+            toast.info('Blokkade ongedaan gemaakt + berichten hersteld', 'Hersteld');
+          } catch (e) { toast.error(e.message, 'Ongedaan maken mislukt'); }
+        },
+      };
+      toast.success(`Gemarkeerd als spam — ${r.archived} bericht${r.archived === 1 ? '' : 'en'} gearchiveerd`, 'Spam', { action: undo });
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      if (selectedMessageId === m.id) advanceSelection(m.id);
+    } catch (e) {
+      toast.error(e.message || 'Spam markeren mislukt');
+    }
+  };
+
+  // Bulk "spam": markeer alle geselecteerde email-berichten als spam + blokkeer hun afzenders.
+  const handleBulkSpam = async (ids, selectedMessages) => {
+    if (!ids?.length) return false;
+    const emailMsgs = (selectedMessages || []).filter((m) => m.channel_type === 'email');
+    if (!emailMsgs.length) {
+      toast.warning('Geen email-berichten in selectie om als spam te markeren');
+      return false;
+    }
+    const ok = confirm(`${emailMsgs.length} bericht${emailMsgs.length === 1 ? '' : 'en'} als spam markeren?\n\nDe afzenders worden geblokkeerd en al hun berichten gearchiveerd.`);
+    if (!ok) return false;
+    try {
+      const results = await Promise.allSettled(emailMsgs.map((m) => api.post(`/messages/${m.id}/spam-and-block`)));
+      const failed = results.filter((res) => res.status === 'rejected').length;
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      if (selectedMessageId && ids.includes(selectedMessageId)) setSelectedMessageId(null);
+      if (failed) {
+        toast.warning(`${emailMsgs.length - failed}/${emailMsgs.length} gemarkeerd als spam — ${failed} fout(en)`, 'Deels gelukt');
+      } else {
+        toast.success(`${emailMsgs.length} afzender${emailMsgs.length === 1 ? '' : 's'} gemarkeerd als spam + geblokkeerd`, 'Spam');
+      }
+      return true;
+    } catch (e) { toast.error(e.message); return false; }
+  };
+
   const onBulkBlock = async (ids, selectedMessages) => {
     if (!ids?.length) return false;
     const emails = [...new Set((selectedMessages || []).map((m) => m.contact_email).filter(Boolean))];
@@ -500,6 +552,7 @@ export default function App() {
             onSchedule={handleSchedule}
             onOpenContact={openContact}
             onBlock={onBlock}
+            onMarkSpam={handleMarkSpam}
             onArchive={onArchive}
             onPin={onPin}
             onUnpin={onUnpin}
@@ -508,6 +561,7 @@ export default function App() {
             onBulkDone={handleBulkDone}
             onBulkArchive={onBulkArchive}
             onBulkBlock={onBulkBlock}
+            onBulkSpam={handleBulkSpam}
             onForward={handleForward}
             onCompose={() => openCompose()}
             selectedId={selectedMessageId}

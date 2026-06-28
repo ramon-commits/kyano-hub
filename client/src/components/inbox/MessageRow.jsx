@@ -4,7 +4,7 @@ import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Badge from '../shared/Badge.jsx';
 import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
-export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onPin, onUnpin, onForward, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
+export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onMarkSpam, onPin, onUnpin, onForward, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
   const isTodo = m.channel_type === 'todo';
@@ -122,6 +122,12 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           {onBlock ? (
             <ActionBtn onClick={(e) => { e.stopPropagation(); onBlock(m); }} title="Blokkeer afzender (x)" hoverColor="hover:bg-red-50 hover:text-red-700">
               <i className="fa-solid fa-ban" />
+            </ActionBtn>
+          ) : null}
+          {/* 3b. Spam — alleen email (snel: spam + blokkeer in één klik) */}
+          {onMarkSpam && m.channel_type === 'email' ? (
+            <ActionBtn onClick={(e) => { e.stopPropagation(); onMarkSpam(m); }} title="Markeer als spam (deze + alle toekomstige)" hoverColor="hover:bg-red-50 hover:text-red-700">
+              <i className="fa-solid fa-shield-halved" />
             </ActionBtn>
           ) : null}
           {/* 4. Plan afspraak */}

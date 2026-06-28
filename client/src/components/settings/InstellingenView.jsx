@@ -3,11 +3,13 @@ import ChannelsSettings from './ChannelsSettings.jsx';
 import UnipileSettings from './UnipileSettings.jsx';
 import BirthdayImportSettings from './BirthdayImportSettings.jsx';
 import StyleProfileSettings from './StyleProfileSettings.jsx';
+import BlocksSettings from './BlocksSettings.jsx';
 import PageHeader from '../shared/PageHeader.jsx';
 import { cn } from '../../lib/utils.js';
 
 const TABS = [
   { id: 'channels', label: 'Kanalen', icon: 'tower-broadcast' },
+  { id: 'blocks', label: 'Blokkades', icon: 'shield-halved' },
   { id: 'import', label: 'Import', icon: 'cloud-arrow-up' },
   { id: 'style', label: 'Stijl', icon: 'palette' },
   { id: 'account', label: 'Account', icon: 'user' },
@@ -47,6 +49,7 @@ export default function InstellingenView() {
               </div>
             </div>
           ) : null}
+          {tab === 'blocks' ? <BlocksSettings /> : null}
           {tab === 'import' ? <BirthdayImportSettings /> : null}
           {tab === 'style' ? <StyleProfileSettings /> : null}
           {tab === 'account' ? (
