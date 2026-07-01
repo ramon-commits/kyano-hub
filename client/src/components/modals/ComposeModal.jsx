@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Modal from './Modal.jsx';
 import ContactAutocomplete from '../shared/ContactAutocomplete.jsx';
 import Avatar from '../shared/Avatar.jsx';
@@ -19,12 +20,17 @@ export default function ComposeModal({
   open,
   onClose,
   initialChannel = null,
+  initialContact = null,
+  prefillSubject = '',
+  prefillText = '',
   prefillTodoTitle = '',
   prefillTodoDesc = '',
   sourceMessageId = null,
+  linkedAsanaId = null,
 }) {
   const { data: channelsData } = useChannels();
   const toast = useToast();
+  const qc = useQueryClient();
 
   const [mode, setMode] = useState('message'); // 'message' | 'todo'
   const [contact, setContact] = useState(null);
@@ -58,16 +64,19 @@ export default function ComposeModal({
   // Reset bij openen
   useEffect(() => {
     if (!open) return;
-    setMode(initialChannel === 'todo' ? 'todo' : 'message');
-    setContact(null);
-    setChannelType(null);
+    const isTodo = initialChannel === 'todo';
+    // Bericht-modus kan met een vooraf gekozen kanaal + contact geopend worden (bv. vanuit een Asana-taak).
+    const presetChannel = !isTodo && ALL_CHANNEL_TYPES.includes(initialChannel) ? initialChannel : null;
+    setMode(isTodo ? 'todo' : 'message');
+    setContact(initialContact || null);
+    setChannelType(presetChannel);
     setAccountId('');
     setTo('');
     setCc('');
     setBcc('');
     setShowCcBcc(false);
-    setSubject('');
-    setText('');
+    setSubject(prefillSubject || '');
+    setText(prefillText || '');
     setFiles([]);
     setSending(false);
     setAiLoading(null);
@@ -77,7 +86,7 @@ export default function ComposeModal({
     setTodoDate('');
     setTodoTime('');
     setTodoPriority('medium');
-  }, [open, initialChannel, prefillTodoTitle, prefillTodoDesc]);
+  }, [open, initialChannel, initialContact, prefillSubject, prefillText, prefillTodoTitle, prefillTodoDesc]);
 
   // Focus de titel zodra de to-do modus actief is (snelle 't' flow)
   useEffect(() => {
@@ -85,6 +94,14 @@ export default function ComposeModal({
       requestAnimationFrame(() => todoTitleRef.current?.focus());
     }
   }, [open, mode]);
+
+  // Asana "Neem contact op"-flow: zodra kanaal + contact + bericht-veld zichtbaar zijn,
+  // focus direct de textarea zodat Ramon meteen kan typen.
+  useEffect(() => {
+    if (open && linkedAsanaId && mode === 'message' && contact && channelType) {
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [open, linkedAsanaId, mode, contact, channelType]);
 
   useEffect(() => {
     if (!showLangPicker) return undefined;
@@ -179,6 +196,21 @@ export default function ComposeModal({
     } finally { setAiLoading(null); }
   };
 
+  // Na een succesvolle verzending: vink de gekoppelde Asana-taak af (indien aanwezig).
+  // Retourneert true als er een Asana-taak was gekoppeld (bepaalt de toast-tekst).
+  const completeLinkedAsana = async () => {
+    if (!linkedAsanaId) return false;
+    try {
+      await api.post(`/asana/complete/${linkedAsanaId}`);
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      return true;
+    } catch {
+      toast.warning('Bericht verstuurd, maar Asana-taak afvinken mislukte');
+      return false;
+    }
+  };
+
   const submit = async () => {
     if (!channelType) { toast.warning('Kies een kanaal'); return; }
     if (!accountId) { toast.warning('Kies een account'); return; }
@@ -199,7 +231,8 @@ export default function ComposeModal({
         fd.append('body_text', text);
         for (const f of files) fd.append('files', f, f.name);
         await api.postForm('/messages/compose', fd);
-        toast.success(`Email verstuurd naar ${recipientLabel}`, 'Verzonden');
+        const asanaDone = await completeLinkedAsana();
+        toast.success(asanaDone ? 'Verstuurd + Asana taak afgevinkt' : `Email verstuurd naar ${recipientLabel}`, 'Verzonden');
         onClose?.();
         return;
       }
@@ -213,7 +246,8 @@ export default function ComposeModal({
         text,
       });
       if (r?.ok) {
-        toast.success(`Bericht verstuurd naar ${recipientLabel}`, 'Verzonden');
+        const asanaDone = await completeLinkedAsana();
+        toast.success(asanaDone ? 'Verstuurd + Asana taak afgevinkt' : `Bericht verstuurd naar ${recipientLabel}`, 'Verzonden');
         onClose?.();
       } else if (r?.fallback && r?.deep_link) {
         toast.info('Geen Unipile-verbinding mogelijk. Opent WhatsApp Web…', 'Fallback');

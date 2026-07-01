@@ -48,6 +48,10 @@ const SAFE_ALTERS = [
   // en (voor custom) de vooraf geschreven tekst / na cron-run de klaargezette draft.
   "ALTER TABLE messages ADD COLUMN follow_up_mode TEXT",
   "ALTER TABLE messages ADD COLUMN follow_up_custom_text TEXT",
+  // Asana to-do's: uit de taak (titel + notities) gedistilleerd contact — zodat de
+  // "Neem contact op"-kaart werkt, óók als de klant nog geen contact in de hub is.
+  "ALTER TABLE messages ADD COLUMN asana_contact_email TEXT",
+  "ALTER TABLE messages ADD COLUMN asana_contact_phone TEXT",
   // Stijlprofiel velden voor automatische stijl-analyse
   "ALTER TABLE style_profiles ADD COLUMN profile_text TEXT",
   "ALTER TABLE style_profiles ADD COLUMN email_count INTEGER DEFAULT 0",

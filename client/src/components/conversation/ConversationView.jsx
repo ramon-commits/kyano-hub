@@ -28,6 +28,7 @@ export default function ConversationView({
   onSpamBlock,
   onAdvance,
   onCreateTodo,
+  onAsanaAction,
 }) {
   const { data: m, isLoading, isError, error, refetch } = useMessage(messageId);
   const { data: thread } = useThread(messageId);
@@ -96,6 +97,12 @@ export default function ConversationView({
 
   const isEmail = m.channel_type === 'email';
   const threadMessages = thread?.messages || [m];
+
+  // Asana-to-do: contact uit de taak (of gematcht contact) → "Neem contact op"-kaart.
+  const isAsana = m.channel_id === 'asana-1';
+  const asanaEmail = m.asana_contact_email || m.contact_email || null;
+  const asanaPhone = m.asana_contact_phone || m.contact_phone || null;
+  const showAsanaCard = isAsana && (asanaEmail || asanaPhone);
 
   // Voor chat threads: tel unieke inbound senders → groepschat als >= 2
   const isChat = m.channel_type === 'whatsapp' || m.channel_type === 'linkedin' || m.channel_type === 'instagram';
@@ -321,6 +328,55 @@ export default function ConversationView({
             <i className="fa-solid fa-circle-info" />
           </button>
         </header>
+
+        {/* Asana-taak: universele "Neem contact op"-kaart. Knoppen puur op basis van
+            wat beschikbaar is (email en/of telefoon) — geen keyword-detectie meer. */}
+        {showAsanaCard ? (
+          <div className="mx-4 mt-3 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
+                  <i className="fa-brands fa-asana mr-1" />Asana taak
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-gray-900">Neem contact op met deze klant</h3>
+                <div className="mt-2 space-y-1 text-sm text-gray-600">
+                  {asanaEmail ? (
+                    <div className="flex items-center gap-2">
+                      <i className="fa-solid fa-envelope text-gray-400 w-4" />
+                      <a href={`mailto:${asanaEmail}`} className="hover:underline">{asanaEmail}</a>
+                    </div>
+                  ) : null}
+                  {asanaPhone ? (
+                    <div className="flex items-center gap-2">
+                      <i className="fa-solid fa-phone text-gray-400 w-4" />
+                      <a href={`tel:${asanaPhone}`} className="hover:underline">{asanaPhone}</a>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-blue-100">
+              <span className="text-xs text-gray-500">Stuur bericht via:</span>
+              {asanaEmail ? (
+                <button
+                  onClick={() => onAsanaAction?.(m, 'email')}
+                  className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                >
+                  <i className="fa-solid fa-envelope" /> Email
+                </button>
+              ) : null}
+              {asanaPhone ? (
+                <button
+                  onClick={() => onAsanaAction?.(m, 'whatsapp')}
+                  className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
+                >
+                  <i className="fa-brands fa-whatsapp" /> WhatsApp
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {/* AI thread-samenvatting (alleen email) */}
         {isEmail ? <ThreadAiSummaryCard messageId={messageId} /> : null}

@@ -12,6 +12,7 @@ const channels = [
   { id: 'li-1', type: 'linkedin', label: 'LinkedIn', account_email: null },
   { id: 'ig-1', type: 'instagram', label: 'Instagram', account_email: null },
   { id: 'todo-1', type: 'todo', label: 'To-do', account_email: null },
+  { id: 'asana-1', type: 'todo', label: 'Asana · FitAid', account_email: null },
 ];
 
 export function seed() {

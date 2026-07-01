@@ -38,7 +38,7 @@ function MetricPillMini({ label, value, color, active, onClick, hide }) {
   );
 }
 
-export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onMarkSpam, onArchive, onPin, onUnpin, onForward, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onBulkSpam, onCompose, selectedId }) {
+export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone, onSchedule, onOpenContact, onBlock, onMarkSpam, onArchive, onPin, onUnpin, onForward, onNavigate, onBulkSnooze, onBulkDone, onBulkArchive, onBulkBlock, onBulkSpam, onCompose, onAsanaAction, selectedId }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(50);
@@ -245,6 +245,7 @@ export default function InboxView({ onOpenMessage, onSnooze, onDone, onFastDone,
                       onMarkSpam={onMarkSpam}
                       onPin={onPin}
                       onForward={onForward}
+                      onAsanaAction={onAsanaAction}
                       selectable
                       isSelected={selection.selectedIds.has(m.id)}
                       onToggleSelect={selection.toggle}

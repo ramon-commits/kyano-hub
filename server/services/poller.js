@@ -3,6 +3,8 @@ import db from '../db/init.js';
 import { syncChannel } from './gmail-sync.js';
 import { syncAllUnipile } from './unipile-sync.js';
 import { isConfigured as unipileConfigured } from './unipile.js';
+import { syncAsana } from './asana-sync.js';
+import { isConfigured as asanaConfigured } from './asana.js';
 import { broadcast } from './notification-bridge.js';
 
 const POLL_STATE = new Map(); // channel_id -> { has_error, error_message, last_run_at }
@@ -76,7 +78,21 @@ async function pollAll() {
       }
     }
 
-    const sumNew = totalNew + unipileNew;
+    // Asana (FitAid taken → to-do inbox)
+    let asanaNew = 0;
+    if (asanaConfigured()) {
+      try {
+        const r = await syncAsana();
+        asanaNew = r.inserted || 0;
+        POLL_STATE.set('asana-1', { has_error: false, error_message: null, last_run_at: new Date().toISOString() });
+        if (r.closed) console.log(`📋 Asana: ${r.closed} taak/taken afgesloten (afgerond in Asana)`);
+      } catch (e) {
+        POLL_STATE.set('asana-1', { has_error: true, error_message: e.message, last_run_at: new Date().toISOString() });
+        console.error('❌ Asana poll error:', e.message);
+      }
+    }
+
+    const sumNew = totalNew + unipileNew + asanaNew;
     if (sumNew > 0) {
       // Stuur SSE event met de N nieuwste open inbound berichten
       const recent = db.prepare(`
@@ -92,7 +108,7 @@ async function pollAll() {
       `).all(Math.min(sumNew, 10));
       broadcast('new-messages', { count: sumNew, messages: recent });
     }
-    console.log(`📧 Polled ${gmailChannels.length} email + ${unipileCount} messaging accounts: ${sumNew} new messages (${okCount} ok, ${errCount} errors)`);
+    console.log(`📧 Polled ${gmailChannels.length} email + ${unipileCount} messaging accounts + Asana: ${sumNew} new (${okCount} ok, ${errCount} errors)`);
   } finally {
     isRunning = false;
   }

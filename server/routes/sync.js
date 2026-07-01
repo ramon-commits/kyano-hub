@@ -4,6 +4,8 @@ import { syncChannel, syncAll } from '../services/gmail-sync.js';
 import { getAllPollerState } from '../services/poller.js';
 import { syncAllUnipile, syncUnipileAccount } from '../services/unipile-sync.js';
 import { isConfigured as unipileConfigured } from '../services/unipile.js';
+import { syncAsana } from '../services/asana-sync.js';
+import { isConfigured as asanaConfigured } from '../services/asana.js';
 
 const router = Router();
 
@@ -37,11 +39,20 @@ router.post('/all', async (_req, res, next) => {
       try { unipile = await syncAllUnipile(); }
       catch (e) { unipile = { error: e.message, total_new: 0, accounts_synced: 0, results: [] }; }
     }
+    let asana = { inserted: 0 };
+    if (asanaConfigured()) {
+      try { asana = await syncAsana(); }
+      catch (e) { asana = { error: e.message, inserted: 0 }; }
+    }
     res.json({
       ok: true,
-      total_new: (gmail.total_new || 0) + (unipile.total_new || 0),
+      total_new: (gmail.total_new || 0) + (unipile.total_new || 0) + (asana.inserted || 0),
       accounts_synced: (gmail.accounts_synced || 0) + (unipile.accounts_synced || 0),
-      results: [...(gmail.results || []), ...(unipile.results || [])],
+      results: [
+        ...(gmail.results || []),
+        ...(unipile.results || []),
+        { channel_id: 'asana-1', ok: !asana.error, error: asana.error || null, inserted: asana.inserted || 0 },
+      ],
     });
   } catch (e) { next(e); }
 });

@@ -8,6 +8,7 @@ import { markAsReadInGmail, markAsSpamInGmail, archiveInGmail } from '../service
 import { getClient } from '../services/gmail-oauth.js';
 import { matchContact } from '../services/contact-matcher.js';
 import * as unipile from '../services/unipile.js';
+import { completeAsanaTasksForMessages } from '../services/asana-sync.js';
 
 const router = Router();
 
@@ -67,7 +68,7 @@ const MESSAGE_SELECT = `
 const LIST_SELECT = `
   SELECT
     m.id, m.external_id, m.channel_id, m.contact_id, m.direction, m.subject, m.snippet,
-    m.status, m.priority, m.received_at, m.thread_id, m.snoozed_until,
+    m.status, m.priority, m.received_at, m.thread_id, m.snoozed_until, m.deep_link,
     m.done_at, m.done_note, m.done_category, m.attachments_json,
     c.name AS contact_name,
     c.company AS contact_company,
@@ -1527,6 +1528,7 @@ router.patch('/:id/done', (req, res) => {
   }
   for (const id of ids) logInteraction(id, 'done', note);
   markExternalReadBulk(ids);
+  completeAsanaTasksForMessages(ids);
 
   res.json({ ok: true, id: req.params.id, status: 'done', thread_updated: changed });
 });
@@ -1605,6 +1607,7 @@ router.post('/bulk/done', (req, res) => {
   const updated = tx();
 
   markExternalReadBulk(expanded);
+  completeAsanaTasksForMessages(expanded);
   logInteractionsBulk(expanded, 'done', note);
   res.json({ ok: true, updated });
 });

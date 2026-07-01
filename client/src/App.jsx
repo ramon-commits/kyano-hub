@@ -111,6 +111,33 @@ export default function App() {
   // Houd een ref-pointer naar toast zodat useCallback's (zoals advanceSelection) hem kunnen gebruiken
   // zonder dat de callback bij elke render her-aangemaakt wordt (toast object is niet stabiel).
   toastRef.current = toast;
+
+  // "Neem contact op"-kaart op een Asana-taak: opent compose met vooraf gekozen kanaal +
+  // een (synthetisch) contact op basis van de uit de taak gedistilleerde email/telefoon.
+  // Werkt óók als de klant nog geen contact in de hub is. Na versturen wordt de gekoppelde
+  // Asana-taak afgevinkt (linkedAsanaId → /asana/complete).
+  const handleAsanaAction = useCallback((message, channelType) => {
+    const email = message.asana_contact_email || message.contact_email || null;
+    const phone = message.asana_contact_phone || message.contact_phone || null;
+    const name = message.contact_name
+      || (message.subject || '').replace(/^(mail|whatsapp|bel|app|appen|opvolgen):?\s*/i, '').trim()
+      || 'Contact';
+    const contact = {
+      id: message.contact_id || null,
+      name,
+      email,
+      phone,
+      avatar_initials: message.contact_initials,
+      avatar_color: message.contact_color,
+      available_channels: [email ? 'email' : null, phone ? 'whatsapp' : null].filter(Boolean),
+    };
+    openCompose({
+      initialChannel: channelType,
+      initialContact: contact,
+      prefillSubject: channelType === 'email' ? (message.subject || '') : '',
+      linkedAsanaId: message.external_id || null,
+    });
+  }, [openCompose]);
   const snoozeMut = useSnoozeMessage();
   const doneMut = useDoneMessage();
   const reopenMut = useReopenMessage();
@@ -537,6 +564,7 @@ export default function App() {
           onSpamBlock={handleSpamBlock}
           onAdvance={advanceSelection}
           onCreateTodo={(prefill) => openCompose({ initialChannel: 'todo', ...prefill })}
+          onAsanaAction={handleAsanaAction}
         />
       );
     }
@@ -564,6 +592,7 @@ export default function App() {
             onBulkSpam={handleBulkSpam}
             onForward={handleForward}
             onCompose={() => openCompose()}
+            onAsanaAction={handleAsanaAction}
             selectedId={selectedMessageId}
           />
         );
@@ -690,9 +719,13 @@ export default function App() {
         open={composeOpen}
         onClose={closeCompose}
         initialChannel={composeChannel}
+        initialContact={composeData?.initialContact}
+        prefillSubject={composeData?.prefillSubject}
+        prefillText={composeData?.prefillText}
         prefillTodoTitle={composeData?.todoTitle}
         prefillTodoDesc={composeData?.todoDesc}
         sourceMessageId={composeData?.sourceMessageId}
+        linkedAsanaId={composeData?.linkedAsanaId}
       />
     </div>
   );

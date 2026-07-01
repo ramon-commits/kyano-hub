@@ -8,6 +8,7 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
   const m = message;
   const isEmail = m.channel_type === 'email';
   const isTodo = m.channel_type === 'todo';
+  const isAsana = m.channel_id === 'asana-1';
 
   return (
     <div
@@ -28,7 +29,11 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
         />
       ) : null}
 
-      {isTodo ? (
+      {isAsana ? (
+        <div className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-rose-100">
+          <i className="fa-solid fa-diagram-project text-lg text-rose-600" />
+        </div>
+      ) : isTodo ? (
         <div className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-purple-100">
           <i className="fa-solid fa-circle-check text-lg text-purple-600" />
         </div>
@@ -54,7 +59,11 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
               {m.message_count}
             </span>
           ) : null}
-          <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" showLabel={false} />
+          {isAsana ? (
+            <Badge color="#be123c" bg="#ffe4e6" size="xs"><i className="fa-brands fa-asana mr-1" />Asana</Badge>
+          ) : (
+            <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" showLabel={false} />
+          )}
           {m.priority === 'high' ? <PriorityBadge priority="high" size="xs" /> : null}
           {m.status === 'waiting' ? (
             <Badge color="#a16207" bg="#fef3c7" size="xs"><i className="fa-solid fa-hourglass-half mr-1" />Wacht op reactie</Badge>
@@ -72,6 +81,19 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
             {isEmail && m.subject ? '— ' : ''}{m.snippet}
           </span>
         </div>
+
+        {isAsana && m.deep_link ? (
+          <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+            <a
+              href={m.deep_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-400 transition-colors hover:text-rose-600"
+            >
+              Open in Asana <i className="fa-solid fa-arrow-up-right-from-square text-[9px]" />
+            </a>
+          </div>
+        ) : null}
 
         {showWakeUp && m.snoozed_until ? (
           <div className="mt-1 text-[11px] text-orange-700">
