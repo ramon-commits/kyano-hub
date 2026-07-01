@@ -70,6 +70,7 @@ const LIST_SELECT = `
     m.id, m.external_id, m.channel_id, m.contact_id, m.direction, m.subject, m.snippet,
     m.status, m.priority, m.received_at, m.thread_id, m.snoozed_until, m.deep_link,
     m.done_at, m.done_note, m.done_category, m.attachments_json,
+    m.asana_contact_email, m.asana_contact_phone,
     c.name AS contact_name,
     c.company AS contact_company,
     c.email AS contact_email,

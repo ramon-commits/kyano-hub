@@ -54,6 +54,16 @@ export async function syncAsana() {
        datetime('now'), datetime('now'), datetime('now'))
   `);
 
+  // Backfill/actueel houden: vult contactvelden bij op bestaande rijen die ze nog missen
+  // (INSERT OR IGNORE raakt bestaande rijen niet). COALESCE = nooit overschrijven.
+  const updateContact = db.prepare(`
+    UPDATE messages
+    SET asana_contact_email = COALESCE(asana_contact_email, ?),
+        asana_contact_phone = COALESCE(asana_contact_phone, ?),
+        contact_id = COALESCE(contact_id, ?)
+    WHERE channel_id = '${CHANNEL_ID}' AND external_id = ?
+  `);
+
   let inserted = 0;
   const tx = db.transaction(() => {
     for (const t of mine) {
@@ -62,6 +72,7 @@ export async function syncAsana() {
       const snippet = (notes ? notes.replace(/\s+/g, ' ') : t.name).slice(0, 180);
       const r = insert.run(uuid(), t.gid, contactId, t.name || '(taak zonder titel)', snippet, notes, t.permalink_url || null, email, phone);
       if (r.changes) inserted++;
+      else updateContact.run(email, phone, contactId, t.gid);
     }
   });
   tx();
@@ -86,6 +97,32 @@ export async function syncAsana() {
   closeTx();
 
   return { inserted, closed, total_tasks: mine.length };
+}
+
+// Eenmalige (idempotente) lokale backfill: bestaande asana-1 rijen die vóór de
+// contact-extractie zijn gesynct hebben nog geen email/telefoon. Vul ze bij uit de
+// reeds opgeslagen titel + notities — zonder Asana-call, dus ook offline veilig.
+export function backfillAsanaContacts() {
+  const rows = db.prepare(`
+    SELECT id, subject, body_text FROM messages
+    WHERE channel_id = '${CHANNEL_ID}'
+      AND asana_contact_email IS NULL AND asana_contact_phone IS NULL
+  `).all();
+  if (!rows.length) return { updated: 0 };
+  const upd = db.prepare(`
+    UPDATE messages
+    SET asana_contact_email = ?, asana_contact_phone = ?, contact_id = COALESCE(contact_id, ?)
+    WHERE id = ?
+  `);
+  let updated = 0;
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      const { email, phone, contactId } = extractContact({ name: r.subject, notes: r.body_text });
+      if (email || phone) { upd.run(email, phone, contactId, r.id); updated++; }
+    }
+  });
+  tx();
+  return { updated };
 }
 
 // Vinkt de bijbehorende Asana-taak/taken af wanneer een hub-to-do wordt afgehandeld.

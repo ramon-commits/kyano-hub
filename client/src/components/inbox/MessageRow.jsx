@@ -1,20 +1,25 @@
+import { useState } from 'react';
 import Avatar from '../shared/Avatar.jsx';
 import ChannelBadge from '../shared/ChannelBadge.jsx';
 import PriorityBadge from '../shared/PriorityBadge.jsx';
 import Badge from '../shared/Badge.jsx';
 import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
-export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onMarkSpam, onPin, onUnpin, onForward, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
+export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onMarkSpam, onPin, onUnpin, onForward, onAsanaAction, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
   const m = message;
   const isEmail = m.channel_type === 'email';
   const isTodo = m.channel_type === 'todo';
   const isAsana = m.channel_id === 'asana-1';
+  // Uitklapbare Asana-taak: alleen als er iets te tonen valt (email of telefoon).
+  const isAsanaTask = isAsana && (m.asana_contact_email || m.asana_contact_phone);
+  const [expanded, setExpanded] = useState(false);
 
   return (
+    <div className="border-b border-gray-100 last:border-b-0">
     <div
       onClick={onClick}
       className={cn(
-        'group flex cursor-pointer items-center gap-4 border-b border-gray-100 px-5 py-[14px] transition-colors last:border-b-0',
+        'group flex cursor-pointer items-center gap-4 px-5 py-[14px] transition-colors',
         isSelected ? 'bg-blue-50' : selected ? 'bg-blue-50/60' : 'hover:bg-gray-50',
       )}
     >
@@ -82,19 +87,6 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           </span>
         </div>
 
-        {isAsana && m.deep_link ? (
-          <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-            <a
-              href={m.deep_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-400 transition-colors hover:text-rose-600"
-            >
-              Open in Asana <i className="fa-solid fa-arrow-up-right-from-square text-[9px]" />
-            </a>
-          </div>
-        ) : null}
-
         {showWakeUp && m.snoozed_until ? (
           <div className="mt-1 text-[11px] text-orange-700">
             <i className="fa-solid fa-clock mr-1" />Komt terug: <strong>{formatDateShort(parseDateSafe(m.snoozed_until))} {formatTime(parseDateSafe(m.snoozed_until))}</strong>
@@ -110,6 +102,15 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {isAsanaTask ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+            className="flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+          >
+            <i className={`fa-solid ${expanded ? 'fa-chevron-up' : 'fa-chevron-down'}`} />
+            {expanded ? 'Sluit' : 'Bekijk'}
+          </button>
+        ) : null}
         {isPinned ? (
           <button
             onClick={(e) => { e.stopPropagation(); onUnpin?.(m); }}
@@ -175,6 +176,86 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
             <ActionBtn onClick={(e) => { e.stopPropagation(); onReopen(m); }} title="Terug naar inbox" hoverColor="hover:bg-blue-50 hover:text-blue-700">
               <i className="fa-solid fa-reply" />
             </ActionBtn>
+          ) : null}
+        </div>
+      </div>
+    </div>
+
+    {expanded && isAsanaTask ? (
+      <ExpandedAsana m={m} onAsanaAction={onAsanaAction} />
+    ) : null}
+    </div>
+  );
+}
+
+// Uitgeklapte Asana-taak: volledige beschrijving, contact-chips en inline actie-knoppen.
+// Knoppen puur op basis van wat beschikbaar is (email en/of telefoon).
+function ExpandedAsana({ m, onAsanaAction }) {
+  const stop = (e) => e.stopPropagation();
+  const description = m.body_text || m.snippet;
+  return (
+    <div className="border-t border-gray-100 bg-purple-50/30 px-4 py-4" onClick={stop}>
+      <div className="ml-14 space-y-3">
+        {description ? (
+          <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700">
+            {description}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          {m.asana_contact_email ? (
+            <span className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700">
+              <i className="fa-solid fa-envelope text-gray-400" />
+              {m.asana_contact_email}
+            </span>
+          ) : null}
+          {m.asana_contact_phone ? (
+            <span className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700">
+              <i className="fa-solid fa-phone text-gray-400" />
+              {m.asana_contact_phone}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs text-gray-500">Neem contact op:</span>
+
+          {m.asana_contact_email ? (
+            <button
+              onClick={() => onAsanaAction?.(m, 'email')}
+              className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700"
+            >
+              <i className="fa-solid fa-envelope" /> Email
+            </button>
+          ) : null}
+
+          {m.asana_contact_phone ? (
+            <button
+              onClick={() => onAsanaAction?.(m, 'whatsapp')}
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
+            >
+              <i className="fa-brands fa-whatsapp" /> WhatsApp
+            </button>
+          ) : null}
+
+          {m.asana_contact_phone ? (
+            <a
+              href={`tel:${m.asana_contact_phone}`}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              <i className="fa-solid fa-phone" /> Bel
+            </a>
+          ) : null}
+
+          {m.deep_link ? (
+            <a
+              href={m.deep_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              <i className="fa-brands fa-asana" /> Open in Asana
+            </a>
           ) : null}
         </div>
       </div>

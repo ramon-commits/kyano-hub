@@ -15,6 +15,7 @@ import { seed, cleanupDemoData } from './db/seed.js';
 import { startSnoozeCron } from './services/snooze-cron.js';
 import { startPoller } from './services/poller.js';
 import { startPurgeCron, purgeNow } from './services/purge-cron.js';
+import { backfillAsanaContacts } from './services/asana-sync.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 
 import messagesRouter from './routes/messages.js';
@@ -182,6 +183,15 @@ cleanupDemoData();
 startSnoozeCron();
 startPoller();
 startPurgeCron();
+
+// Bestaande Asana-taken (gesynct vóór de contact-extractie) lokaal bijvullen zodat de
+// uitklapbare "Neem contact op"-acties in de inbox meteen beschikbaar zijn.
+try {
+  const r = backfillAsanaContacts();
+  if (r.updated) console.log(`📇 Asana contact-backfill: ${r.updated} taken bijgewerkt`);
+} catch (e) {
+  console.error('Asana contact-backfill faalde:', e.message);
+}
 
 app.listen(PORT, () => {
   console.log(`🚀 Kyano Comm Hub draait op http://localhost:${PORT}`);

@@ -117,6 +117,9 @@ export default function App() {
   // Werkt óók als de klant nog geen contact in de hub is. Na versturen wordt de gekoppelde
   // Asana-taak afgevinkt (linkedAsanaId → /asana/complete).
   const handleAsanaAction = useCallback((message, channelType) => {
+    // Open de conversatie erbij (vanuit de inbox-lijst) én de pre-filled composer.
+    const openId = message.id || message.latest_message_id;
+    if (openId) setSelectedMessageId(openId);
     const email = message.asana_contact_email || message.contact_email || null;
     const phone = message.asana_contact_phone || message.contact_phone || null;
     const name = message.contact_name
