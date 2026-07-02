@@ -97,6 +97,10 @@ export default function ConversationView({
 
   const isEmail = m.channel_type === 'email';
   const threadMessages = thread?.messages || [m];
+  // Placeholder-berichten (leeg 'nieuw gesprek') nooit in de thread tonen. Zijn er geen
+  // echte berichten, dan is dit een nieuw gesprek → lege state + composer.
+  const visibleMessages = threadMessages.filter((tm) => !tm.is_placeholder);
+  const isNewConversation = visibleMessages.length === 0;
 
   // Asana-to-do: contact uit de taak (of gematcht contact) → "Neem contact op"-kaart.
   const isAsana = m.channel_id === 'asana-1';
@@ -107,7 +111,7 @@ export default function ConversationView({
   // Voor chat threads: tel unieke inbound senders → groepschat als >= 2
   const isChat = m.channel_type === 'whatsapp' || m.channel_type === 'linkedin' || m.channel_type === 'instagram';
   const uniqueInboundSenders = new Set();
-  for (const tm of threadMessages) {
+  for (const tm of visibleMessages) {
     if (tm.direction === 'inbound' && tm.subject) uniqueInboundSenders.add(tm.subject);
   }
   const isGroupChat = isChat && uniqueInboundSenders.size >= 2;
@@ -131,6 +135,8 @@ export default function ConversationView({
       } else {
         toast.success(`Verzonden via ${result.from || m.channel_account || m.channel_label}`, 'Verstuurd');
       }
+      // Nieuw gesprek (placeholder): eerste bericht is verstuurd → door naar het volgende.
+      if (m.is_placeholder && onAdvance) onAdvance(messageId);
       return true;
     } catch (e) {
       if (e.status === 401 || e.data?.needs_reconnect) {
@@ -195,7 +201,7 @@ export default function ConversationView({
   };
 
   // Bepaal of het laatste bericht in de thread outbound is (= jij wacht op antwoord)
-  const lastThreadMsg = threadMessages[threadMessages.length - 1];
+  const lastThreadMsg = visibleMessages[visibleMessages.length - 1];
   const showFollowUp = !!(lastThreadMsg && lastThreadMsg.direction === 'outbound');
 
   // Pre-fill voor de to-do — hergebruikt de ComposeModal to-do tab (zelfde flow als '+' / 't').
@@ -260,15 +266,17 @@ export default function ConversationView({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-base font-semibold text-gray-900">
-                {isEmail && m.subject
-                  ? m.subject
-                  : (m.contact_name || m.channel_account || 'Onbekend')}
+                {m.is_placeholder
+                  ? (m.asana_task_title || m.contact_name || m.channel_account || 'Nieuw gesprek')
+                  : isEmail && m.subject
+                    ? m.subject
+                    : (m.contact_name || m.channel_account || 'Onbekend')}
               </h2>
               <ChannelBadge type={m.channel_type} label={m.channel_label} size="xs" />
               {m.priority === 'high' ? <PriorityBadge priority="high" size="xs" /> : null}
-              {threadMessages.length > 1 ? (
+              {visibleMessages.length > 1 ? (
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">
-                  {threadMessages.length} berichten
+                  {visibleMessages.length} berichten
                 </span>
               ) : null}
             </div>
@@ -397,8 +405,8 @@ export default function ConversationView({
           </div>
         ) : null}
 
-        {/* AI thread-samenvatting (alleen email) */}
-        {isEmail ? <ThreadAiSummaryCard messageId={messageId} /> : null}
+        {/* AI thread-samenvatting (alleen email, niet bij een leeg nieuw gesprek) */}
+        {isEmail && !isNewConversation ? <ThreadAiSummaryCard messageId={messageId} /> : null}
 
         {/* Follow-up klaargezet door de cron (slimme follow-up) — laad de voorbereide tekst */}
         {followUpReady ? (
@@ -431,7 +439,21 @@ export default function ConversationView({
 
         {/* Thread body */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
-          {isEmail ? <EmailThread message={m} threadMessages={threadMessages} /> : <ChatThread message={m} threadMessages={threadMessages} />}
+          {isNewConversation ? (
+            <div className="flex h-full items-center justify-center py-12">
+              <div className="text-center">
+                <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                  <i className="fa-solid fa-envelope-open-text text-2xl text-gray-400" />
+                </div>
+                <p className="text-sm text-gray-500">Nieuw gesprek</p>
+                <p className="mt-1 text-xs text-gray-400">Type je bericht hieronder om te starten</p>
+              </div>
+            </div>
+          ) : isEmail ? (
+            <EmailThread message={m} threadMessages={visibleMessages} />
+          ) : (
+            <ChatThread message={m} threadMessages={visibleMessages} />
+          )}
         </div>
 
         <ReplyComposer

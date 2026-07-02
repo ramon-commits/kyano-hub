@@ -57,7 +57,10 @@ const MESSAGE_SELECT = `
     ch.type AS channel_type,
     ch.label AS channel_label,
     ch.account_email AS channel_account,
-    (SELECT asana_task_id FROM message_asana_links WHERE message_id = m.id LIMIT 1) AS asana_link_id
+    (SELECT asana_task_id FROM message_asana_links WHERE message_id = m.id LIMIT 1) AS asana_link_id,
+    (SELECT am.subject FROM message_asana_links mal
+       JOIN messages am ON am.external_id = mal.asana_task_id AND am.channel_id = 'asana-1'
+       WHERE mal.message_id = m.id LIMIT 1) AS asana_task_title
   FROM messages m
   LEFT JOIN contacts c ON c.id = m.contact_id
   LEFT JOIN channels ch ON ch.id = m.channel_id

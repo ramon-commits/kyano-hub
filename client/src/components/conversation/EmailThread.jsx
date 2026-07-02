@@ -142,11 +142,6 @@ export default function EmailThread({ message, threadMessages }) {
       {messages.map((m) => (
         <EmailItem key={m.id} message={m} expanded={m.id === newestId} />
       ))}
-      {messages.length === 1 && !message.body_html && !message.body_text ? (
-        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-center text-xs text-gray-500">
-          Volledige email body wordt geladen na Gmail sync (stap 3).
-        </div>
-      ) : null}
     </div>
   );
 }
