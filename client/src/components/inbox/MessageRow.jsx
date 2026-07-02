@@ -82,9 +82,13 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
           {isEmail && m.subject ? (
             <span className="truncate font-medium text-gray-800">{m.subject}</span>
           ) : null}
-          <span className="truncate text-gray-500">
-            {isEmail && m.subject ? '— ' : ''}{m.snippet}
-          </span>
+          {m.is_placeholder ? (
+            <span className="truncate italic text-gray-400">Klik om je eerste bericht te typen…</span>
+          ) : (
+            <span className="truncate text-gray-500">
+              {isEmail && m.subject ? '— ' : ''}{m.snippet}
+            </span>
+          )}
         </div>
 
         {showWakeUp && m.snoozed_until ? (
@@ -188,21 +192,65 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
   );
 }
 
-// Uitgeklapte Asana-taak: volledige beschrijving, contact-chips en inline actie-knoppen.
-// Knoppen puur op basis van wat beschikbaar is (email en/of telefoon).
+// Uitgeklapte Asana-taak: klant-hero, volledige klantinfo (custom fields), contact-chips,
+// assignee en inline actie-knoppen. Knoppen puur op basis van wat beschikbaar is.
 function ExpandedAsana({ m, onAsanaAction }) {
   const stop = (e) => e.stopPropagation();
   const description = m.body_text || m.snippet;
+
+  let cf = {};
+  try { cf = m.asana_custom_fields ? JSON.parse(m.asana_custom_fields) : {}; } catch { cf = {}; }
+  const customerName = cf['Account name'] || cf['Customer'] || cf['Klant'] || cf['Company'] || null;
+  // Velden die we elders al tonen niet nog eens in de grid herhalen.
+  const excluded = ['Account name', 'Customer', 'Klant', 'Company', 'Country', 'Contact', 'Email', 'Phone', 'Contact Email', 'Contact Phone'];
+  const gridFields = Object.entries(cf).filter(([k, v]) => !excluded.includes(k) && v !== null && v !== '');
+
+  const emailChannelLabel = m.asana_email_channel === 'gmail-3' ? 'Dach'
+    : m.asana_email_channel === 'gmail-1' ? 'Ramon' : 'FitAid';
+
   return (
     <div className="border-t border-gray-100 bg-purple-50/30 px-4 py-4" onClick={stop}>
-      <div className="ml-14 space-y-3">
+      <div className="ml-14 space-y-4">
+        {customerName ? (
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 font-semibold text-purple-700">
+              {customerName.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">{customerName}</h3>
+              {cf['Country'] || cf['Account Status'] ? (
+                <p className="text-xs text-gray-500">
+                  {[cf['Country'], cf['Account Status']].filter(Boolean).join(' · ')}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {description ? (
           <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700">
             {description}
           </div>
         ) : null}
 
+        {gridFields.length ? (
+          <div className="grid grid-cols-2 gap-2">
+            {gridFields.map(([key, value]) => (
+              <div key={key} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                <p className="text-xs text-gray-500">{key}</p>
+                <p className="mt-0.5 text-sm font-medium text-gray-900">{String(value)}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap gap-2">
+          {m.asana_assignee_email ? (
+            <span className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-700">
+              <i className="fa-solid fa-user text-blue-400" />
+              Toegewezen: {m.asana_assignee_email}
+            </span>
+          ) : null}
           {m.asana_contact_email ? (
             <span className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700">
               <i className="fa-solid fa-envelope text-gray-400" />
@@ -226,6 +274,7 @@ function ExpandedAsana({ m, onAsanaAction }) {
               className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700"
             >
               <i className="fa-solid fa-envelope" /> Email
+              <span className="text-xs opacity-75">(vanaf {emailChannelLabel})</span>
             </button>
           ) : null}
 
@@ -235,6 +284,7 @@ function ExpandedAsana({ m, onAsanaAction }) {
               className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
             >
               <i className="fa-brands fa-whatsapp" /> WhatsApp
+              <span className="text-xs opacity-75">FitAid Business</span>
             </button>
           ) : null}
 

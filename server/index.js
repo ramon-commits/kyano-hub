@@ -193,6 +193,18 @@ try {
   console.error('Asana contact-backfill faalde:', e.message);
 }
 
+// Overzicht van beschikbare kanalen — zodat de assignee→afzender mapping (Asana) te
+// controleren is tegen de echte channel-id's.
+try {
+  const channels = db.prepare('SELECT id, type, label, account_email FROM channels ORDER BY type, id').all();
+  console.log('📬 Beschikbare kanalen:');
+  for (const c of channels) {
+    console.log(`   ${String(c.id).padEnd(9)} ${String(c.type).padEnd(10)} ${c.account_email || c.label || '(geen label)'}`);
+  }
+} catch (e) {
+  console.error('Kanalenoverzicht faalde:', e.message);
+}
+
 app.listen(PORT, () => {
   console.log(`🚀 Kyano Comm Hub draait op http://localhost:${PORT}`);
   console.log(`   API:    http://localhost:${PORT}/api/health`);

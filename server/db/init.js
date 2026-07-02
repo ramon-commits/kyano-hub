@@ -52,6 +52,15 @@ const SAFE_ALTERS = [
   // "Neem contact op"-kaart werkt, óók als de klant nog geen contact in de hub is.
   "ALTER TABLE messages ADD COLUMN asana_contact_email TEXT",
   "ALTER TABLE messages ADD COLUMN asana_contact_phone TEXT",
+  // Asana custom fields (JSON: naam → waarde), de assignee, en het per-assignee
+  // bepaalde afzender-kanaal (email/whatsapp) — voor de klantinfo + juiste account.
+  "ALTER TABLE messages ADD COLUMN asana_custom_fields TEXT",
+  "ALTER TABLE messages ADD COLUMN asana_assignee_email TEXT",
+  "ALTER TABLE messages ADD COLUMN asana_email_channel TEXT",
+  "ALTER TABLE messages ADD COLUMN asana_whatsapp_channel TEXT",
+  // Placeholder-bericht: een leeg 'nieuw gesprek' dat via een Asana-taak is gestart
+  // en nog geen echte historie heeft. Verdwijnt zodra er een echt bericht binnenkomt.
+  "ALTER TABLE messages ADD COLUMN is_placeholder INTEGER DEFAULT 0",
   // Stijlprofiel velden voor automatische stijl-analyse
   "ALTER TABLE style_profiles ADD COLUMN profile_text TEXT",
   "ALTER TABLE style_profiles ADD COLUMN email_count INTEGER DEFAULT 0",
@@ -64,6 +73,17 @@ for (const sql of SAFE_ALTERS) {
     }
   }
 }
+
+// Koppeltabel: verbindt een (echte of placeholder-) conversatie aan een Asana-taak.
+// Bij het versturen van een reply in die conversatie wordt de taak automatisch afgevinkt.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS message_asana_links (
+    message_id TEXT NOT NULL,
+    asana_task_id TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (message_id, asana_task_id)
+  )
+`);
 
 // Migration: channels.type CHECK moet 'todo' toestaan (voor het to-do systeem).
 // SQLite kan een CHECK niet via ALTER aanpassen — dus rebuild van de tabel als de

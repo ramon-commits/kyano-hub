@@ -11,11 +11,44 @@ function normalizePhone(phone) {
   return phone.replace(/[\s\-()]/g, '').replace(/^00/, '+').replace(/^0(?=\d)/, '+31');
 }
 
-// Distilleer contactgegevens uit een taak (titel + notities): emailadres + telefoon.
-// Universeel — géén keyword-detectie op de titel meer. De "Neem contact op"-kaart bepaalt
-// de knoppen puur op wat hier gevonden wordt.
+// Bouwt een { veldnaam: waarde } dictionary uit Asana custom_fields (display_value = de
+// door Asana geformatteerde weergave, werkt voor tekst/nummer/enum/datum).
+function customFieldsDict(task) {
+  const out = {};
+  for (const cf of (task.custom_fields || [])) {
+    const value = cf.display_value;
+    if (cf.name && value !== null && value !== undefined && value !== '') out[cf.name] = value;
+  }
+  return out;
+}
+
+// Map de Asana-assignee naar het juiste Comm Hub-afzenderkanaal.
+// (channel-id's geverifieerd tegen de channels-tabel — niet geraden.)
+//   Ramon → gmail-1 (ramon@lifeaidbevco.eu) / wa-2 (WhatsApp FitAid Business)
+//   Dach  → gmail-3 (dach@lifeaidbevco.eu)  / wa-3 (WhatsApp DACH)
+function resolveChannel(assigneeEmail, kind) {
+  const email = (assigneeEmail || '').toLowerCase();
+  if (kind === 'email') {
+    if (email.includes('dach')) return 'gmail-3';
+    if (email.includes('ramon')) return 'gmail-1';
+    return 'gmail-1';
+  }
+  if (kind === 'whatsapp') {
+    if (email.includes('dach')) return 'wa-3';
+    if (email.includes('ramon')) return 'wa-2';
+    return 'wa-2';
+  }
+  return null;
+}
+
+// Distilleer contactgegevens uit een taak: emailadres + telefoon. Zoekt in titel,
+// notities én het "Contact"-custom field (daar staat bij FitAid "Tel: … Email: …").
+// Universeel — géén keyword-detectie op de titel. De acties bepalen de knoppen puur
+// op wat hier gevonden wordt.
 function extractContact(task) {
-  const hay = `${task.name || ''}\n${task.notes || ''}`;
+  const cf = task.custom_fields ? customFieldsDict(task) : {};
+  const contactField = cf['Contact'] || cf['Contact Email'] || cf['Email'] || '';
+  const hay = `${task.name || ''}\n${task.notes || ''}\n${contactField}`;
   const email = (hay.match(EMAIL_RE) || [])[0] || null;
   const phoneRaw = (hay.match(PHONE_RE) || [])[0] || null;
   const phone = phoneRaw ? normalizePhone(phoneRaw) : null;
@@ -49,18 +82,23 @@ export async function syncAsana() {
     INSERT OR IGNORE INTO messages
       (id, external_id, channel_id, contact_id, direction, subject, snippet, body_text, deep_link,
        asana_contact_email, asana_contact_phone,
+       asana_custom_fields, asana_assignee_email, asana_email_channel, asana_whatsapp_channel,
        status, priority, received_at, created_at, updated_at)
-    VALUES (?, ?, '${CHANNEL_ID}', ?, 'inbound', ?, ?, ?, ?, ?, ?, 'open', 'medium',
+    VALUES (?, ?, '${CHANNEL_ID}', ?, 'inbound', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'medium',
        datetime('now'), datetime('now'), datetime('now'))
   `);
 
-  // Backfill/actueel houden: vult contactvelden bij op bestaande rijen die ze nog missen
+  // Backfill/actueel houden: vult velden bij op bestaande rijen die ze nog missen
   // (INSERT OR IGNORE raakt bestaande rijen niet). COALESCE = nooit overschrijven.
   const updateContact = db.prepare(`
     UPDATE messages
     SET asana_contact_email = COALESCE(asana_contact_email, ?),
         asana_contact_phone = COALESCE(asana_contact_phone, ?),
-        contact_id = COALESCE(contact_id, ?)
+        contact_id = COALESCE(contact_id, ?),
+        asana_custom_fields = COALESCE(asana_custom_fields, ?),
+        asana_assignee_email = COALESCE(asana_assignee_email, ?),
+        asana_email_channel = COALESCE(asana_email_channel, ?),
+        asana_whatsapp_channel = COALESCE(asana_whatsapp_channel, ?)
     WHERE channel_id = '${CHANNEL_ID}' AND external_id = ?
   `);
 
@@ -68,11 +106,15 @@ export async function syncAsana() {
   const tx = db.transaction(() => {
     for (const t of mine) {
       const { email, phone, contactId } = extractContact(t);
+      const assignee = t.assignee?.email || null;
+      const fieldsJson = JSON.stringify(customFieldsDict(t));
+      const emailChannel = resolveChannel(assignee, 'email');
+      const waChannel = resolveChannel(assignee, 'whatsapp');
       const notes = (t.notes || '').trim() || null;
       const snippet = (notes ? notes.replace(/\s+/g, ' ') : t.name).slice(0, 180);
-      const r = insert.run(uuid(), t.gid, contactId, t.name || '(taak zonder titel)', snippet, notes, t.permalink_url || null, email, phone);
+      const r = insert.run(uuid(), t.gid, contactId, t.name || '(taak zonder titel)', snippet, notes, t.permalink_url || null, email, phone, fieldsJson, assignee, emailChannel, waChannel);
       if (r.changes) inserted++;
-      else updateContact.run(email, phone, contactId, t.gid);
+      else updateContact.run(email, phone, contactId, fieldsJson, assignee, emailChannel, waChannel, t.gid);
     }
   });
   tx();
@@ -123,6 +165,29 @@ export function backfillAsanaContacts() {
   });
   tx();
   return { updated };
+}
+
+// Vinkt de aan een conversatie gekoppelde Asana-taak af (via message_asana_links) zodra
+// er in die conversatie een bericht wordt verstuurd. Zet de asana-1 to-do op 'done' en
+// ruimt een eventueel placeholder-bericht op. Fire-and-forget richting Asana.
+export function completeLinkedAsanaForMessage(messageId) {
+  if (!messageId) return 0;
+  const links = db.prepare('SELECT asana_task_id FROM message_asana_links WHERE message_id = ?').all(messageId);
+  if (!links.length) return 0;
+  const closeTodo = db.prepare(`
+    UPDATE messages SET status='done', done_at=datetime('now'), done_category='replied',
+      done_note='Beantwoord — Asana taak afgevinkt', updated_at=datetime('now')
+    WHERE channel_id='${CHANNEL_ID}' AND external_id=? AND status IN ('open','snoozed','waiting')
+  `);
+  for (const { asana_task_id } of links) {
+    closeTodo.run(asana_task_id);
+    if (isConfigured()) {
+      completeTask(asana_task_id).catch((e) => console.error(`[ASANA] link-complete ${asana_task_id} faalde: ${e.message}`));
+    }
+  }
+  // Placeholder-bericht (het 'nieuwe gesprek') is nu overbodig → op done.
+  db.prepare(`UPDATE messages SET status='done', done_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND is_placeholder=1`).run(messageId);
+  return links.length;
 }
 
 // Vinkt de bijbehorende Asana-taak/taken af wanneer een hub-to-do wordt afgehandeld.

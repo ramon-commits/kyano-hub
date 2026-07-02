@@ -112,35 +112,35 @@ export default function App() {
   // zonder dat de callback bij elke render her-aangemaakt wordt (toast object is niet stabiel).
   toastRef.current = toast;
 
-  // "Neem contact op"-kaart op een Asana-taak: opent compose met vooraf gekozen kanaal +
-  // een (synthetisch) contact op basis van de uit de taak gedistilleerde email/telefoon.
-  // Werkt óók als de klant nog geen contact in de hub is. Na versturen wordt de gekoppelde
-  // Asana-taak afgevinkt (linkedAsanaId → /asana/complete).
-  const handleAsanaAction = useCallback((message, channelType) => {
-    // Open de conversatie erbij (vanuit de inbox-lijst) én de pre-filled composer.
-    const openId = message.id || message.latest_message_id;
-    if (openId) setSelectedMessageId(openId);
-    const email = message.asana_contact_email || message.contact_email || null;
-    const phone = message.asana_contact_phone || message.contact_phone || null;
-    const name = message.contact_name
-      || (message.subject || '').replace(/^(mail|whatsapp|bel|app|appen|opvolgen):?\s*/i, '').trim()
-      || 'Contact';
-    const contact = {
-      id: message.contact_id || null,
-      name,
-      email,
-      phone,
-      avatar_initials: message.contact_initials,
-      avatar_color: message.contact_color,
-      available_channels: [email ? 'email' : null, phone ? 'whatsapp' : null].filter(Boolean),
-    };
-    openCompose({
-      initialChannel: channelType,
-      initialContact: contact,
-      prefillSubject: channelType === 'email' ? (message.subject || '') : '',
-      linkedAsanaId: message.external_id || null,
-    });
-  }, [openCompose]);
+  // Asana-taak actie (Email/WhatsApp): open het NORMALE gesprek met deze klant op het juiste
+  // afzenderkanaal (per assignee bepaald). Bestaat er nog geen gesprek → er wordt een leeg
+  // 'nieuw gesprek' gestart. De taak wordt gekoppeld en bij de eerste reply afgevinkt.
+  const handleAsanaAction = useCallback(async (message, channelType) => {
+    const channelId = channelType === 'email'
+      ? (message.asana_email_channel || 'gmail-1')
+      : (message.asana_whatsapp_channel || 'wa-2');
+    const contactEmail = channelType === 'email' ? (message.asana_contact_email || message.contact_email || null) : null;
+    const contactPhone = channelType === 'whatsapp' ? (message.asana_contact_phone || message.contact_phone || null) : null;
+    let contactName = message.contact_name || null;
+    try {
+      const cf = message.asana_custom_fields ? JSON.parse(message.asana_custom_fields) : {};
+      contactName = cf['Account name'] || cf['Customer'] || cf['Klant'] || contactName;
+    } catch { /* geen/kapotte custom fields — negeer */ }
+    try {
+      const r = await api.post('/messages/open-or-create', {
+        channel_type: channelType,
+        channel_id: channelId,
+        contact_email: contactEmail,
+        contact_phone: contactPhone,
+        contact_name: contactName,
+        asana_task_id: message.external_id,
+      });
+      setSelectedMessageId(r.message_id);
+      if (r.is_new) toastRef.current?.success(`Nieuw ${channelType === 'email' ? 'email' : 'WhatsApp'} gesprek gestart`);
+    } catch (e) {
+      toastRef.current?.error(e.message || 'Gesprek openen mislukt');
+    }
+  }, []);
   const snoozeMut = useSnoozeMessage();
   const doneMut = useDoneMessage();
   const reopenMut = useReopenMessage();

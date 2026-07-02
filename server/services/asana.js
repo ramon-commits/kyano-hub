@@ -44,7 +44,7 @@ async function asanaFetch(path, opts = {}) {
 // Alle níet-afgeronde taken in het geconfigureerde project (gepagineerd).
 export async function fetchIncompleteTasks() {
   const pid = getProjectId();
-  const fields = 'name,notes,completed,permalink_url,assignee.name,assignee.email,due_on,due_at';
+  const fields = 'name,notes,completed,permalink_url,assignee.name,assignee.email,due_on,due_at,created_at,modified_at,custom_fields.name,custom_fields.type,custom_fields.display_value';
   let path = `/projects/${pid}/tasks?opt_fields=${encodeURIComponent(fields)}&completed_since=now&limit=100`;
   const out = [];
   let guard = 0;

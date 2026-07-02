@@ -8,7 +8,7 @@ import { markAsReadInGmail, markAsSpamInGmail, archiveInGmail } from '../service
 import { getClient } from '../services/gmail-oauth.js';
 import { matchContact } from '../services/contact-matcher.js';
 import * as unipile from '../services/unipile.js';
-import { completeAsanaTasksForMessages } from '../services/asana-sync.js';
+import { completeAsanaTasksForMessages, completeLinkedAsanaForMessage } from '../services/asana-sync.js';
 
 const router = Router();
 
@@ -56,7 +56,8 @@ const MESSAGE_SELECT = `
     c.avatar_color AS contact_color,
     ch.type AS channel_type,
     ch.label AS channel_label,
-    ch.account_email AS channel_account
+    ch.account_email AS channel_account,
+    (SELECT asana_task_id FROM message_asana_links WHERE message_id = m.id LIMIT 1) AS asana_link_id
   FROM messages m
   LEFT JOIN contacts c ON c.id = m.contact_id
   LEFT JOIN channels ch ON ch.id = m.channel_id
@@ -70,7 +71,8 @@ const LIST_SELECT = `
     m.id, m.external_id, m.channel_id, m.contact_id, m.direction, m.subject, m.snippet,
     m.status, m.priority, m.received_at, m.thread_id, m.snoozed_until, m.deep_link,
     m.done_at, m.done_note, m.done_category, m.attachments_json,
-    m.asana_contact_email, m.asana_contact_phone,
+    m.asana_contact_email, m.asana_contact_phone, m.asana_custom_fields,
+    m.asana_assignee_email, m.asana_email_channel, m.asana_whatsapp_channel, m.is_placeholder,
     c.name AS contact_name,
     c.company AS contact_company,
     c.email AS contact_email,
@@ -849,7 +851,34 @@ router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
         });
       }
       const chatId = original.thread_id;
-      if (!chatId) return res.status(400).json({ error: 'Geen thread_id (chat) gevonden voor dit bericht' });
+      if (!chatId) {
+        // Nieuw gesprek (bv. een via een Asana-taak gestart placeholder): er is nog geen
+        // chat — start er één met het telefoonnummer van het contact.
+        const chRow = db.prepare('SELECT config_json FROM channels WHERE id = ?').get(original.channel_id);
+        let unipileAccountId = null;
+        try { unipileAccountId = JSON.parse(chRow?.config_json || '{}').unipile_account_id || null; } catch { /* ignore */ }
+        const phone = original.contact_phone;
+        if (!unipileAccountId || !phone) {
+          return res.status(400).json({ error: 'Geen bestaande chat en geen telefoonnummer om een nieuw gesprek te starten', deep_link: original.deep_link });
+        }
+        try {
+          const started = await unipile.startNewChat(unipileAccountId, phone, plainBody);
+          const newThreadId = started?.chat_id || started?.id || null;
+          const localId = uuid();
+          db.prepare(`
+            INSERT INTO messages (id, external_id, channel_id, contact_id, direction, snippet, body_text, thread_id, status, priority, received_at)
+            VALUES (?, ?, ?, ?, 'outbound', ?, ?, ?, 'archived', 'medium', ?)
+          `).run(localId, `local-${localId}`, original.channel_id, original.contact_id, plainBody.slice(0, 200), plainBody, newThreadId, new Date().toISOString());
+          // Placeholder krijgt nu de echte chat → vervolg-replies gaan naar dezelfde chat.
+          db.prepare("UPDATE messages SET thread_id = ? WHERE id = ? AND is_placeholder = 1").run(newThreadId, req.params.id);
+          completeLinkedAsanaForMessage(req.params.id);
+          return res.json({ ok: true, message_id: localId, channel_type: original.channel_type, original_id: req.params.id, original_done: true, thread_done_count: 0 });
+        } catch (e) {
+          const cleanPhone = String(phone).replace(/[^0-9+]/g, '');
+          const deepLink = cleanPhone ? `https://wa.me/${cleanPhone.replace(/^\+/, '')}?text=${encodeURIComponent(plainBody)}` : original.deep_link;
+          return res.status(500).json({ error: e.message, deep_link: deepLink });
+        }
+      }
       try {
         const sent = await unipile.sendMessage(chatId, plainBody);
         const localId = uuid();
@@ -880,13 +909,15 @@ router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
           logInteraction(tid, 'replied', 'Beantwoord via Comm Hub', 'sent');
         }
         markExternalReadBulk(threadOpenIds);
+        // Gekoppelde Asana-taak? → afvinken bij deze reply.
+        const asanaDone = completeLinkedAsanaForMessage(req.params.id);
 
         return res.json({
           ok: true,
           message_id: localId,
           channel_type: original.channel_type,
           original_id: req.params.id,
-          original_done: false,
+          original_done: !!asanaDone,
           thread_done_count: 0,
         });
       } catch (e) {
@@ -963,6 +994,8 @@ router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
     } else if (original.external_id) {
       markAsReadInGmail(original.channel_id, original.external_id);
     }
+    // Gekoppelde Asana-taak? → afvinken bij deze reply.
+    const asanaDone = completeLinkedAsanaForMessage(req.params.id);
 
     res.json({
       ok: true,
@@ -971,7 +1004,7 @@ router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
       thread_id: result.threadId,
       from: result.fromEmail,
       original_id: req.params.id,
-      original_done: false,
+      original_done: !!asanaDone,
       thread_done_count: 0,
     });
   } catch (e) { next(e); }
@@ -1273,6 +1306,85 @@ function escapeHtmlForForward(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
+// POST /api/messages/open-or-create — open de bestaande conversatie met een contact op een
+// specifiek kanaal, of maak een leeg placeholder-gesprek. Koppelt optioneel een Asana-taak
+// zodat die bij de eerste verstuurde reply automatisch wordt afgevinkt.
+router.post('/open-or-create', (req, res) => {
+  const { channel_type, channel_id, contact_email, contact_phone, contact_name, asana_task_id } = req.body || {};
+  if (!channel_id) return res.status(400).json({ error: 'channel_id is verplicht' });
+
+  const channel = db.prepare('SELECT id FROM channels WHERE id = ?').get(channel_id);
+  if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+  // 1. Zoek bestaand contact op email of telefoon (laatste 9 cijfers = landcode-onafhankelijk).
+  let contact = null;
+  if (contact_email) {
+    contact = db.prepare('SELECT * FROM contacts WHERE lower(email) = lower(?)').get(contact_email);
+  }
+  if (!contact && contact_phone) {
+    const suffix = String(contact_phone).replace(/[^0-9]/g, '').slice(-9);
+    if (suffix) {
+      contact = db.prepare(`
+        SELECT * FROM contacts
+        WHERE phone IS NOT NULL
+          AND replace(replace(replace(phone,'+',''),' ',''),'-','') LIKE ?
+        LIMIT 1
+      `).get(`%${suffix}`);
+    }
+  }
+
+  // 2. Maak contact als het niet bestaat.
+  if (!contact) {
+    const id = uuid();
+    const name = (contact_name && contact_name.trim())
+      || (contact_email ? contact_email.split('@')[0].replace(/[._-]/g, ' ') : null)
+      || contact_phone || 'Contact';
+    db.prepare('INSERT INTO contacts (id, name, email, phone, avatar_initials, avatar_color) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, name, contact_email || null, contact_phone || null, name.trim().slice(0, 2).toUpperCase(), '#7c3aed');
+    contact = { id, name, email: contact_email || null, phone: contact_phone || null };
+  }
+
+  const linkAsana = (messageId) => {
+    if (!asana_task_id) return;
+    db.prepare('INSERT OR IGNORE INTO message_asana_links (message_id, asana_task_id) VALUES (?, ?)').run(messageId, asana_task_id);
+  };
+
+  // 3. Bestaande ECHTE conversatie op dit kanaal?
+  const existing = db.prepare(`
+    SELECT id FROM messages
+    WHERE contact_id = ? AND channel_id = ? AND COALESCE(is_placeholder, 0) = 0
+    ORDER BY received_at DESC LIMIT 1
+  `).get(contact.id, channel_id);
+  if (existing) {
+    linkAsana(existing.id);
+    return res.json({ ok: true, message_id: existing.id, is_new: false, contact_id: contact.id });
+  }
+
+  // 4. Al een placeholder-gesprek? Hergebruik het.
+  const placeholder = db.prepare(`
+    SELECT id FROM messages WHERE contact_id = ? AND channel_id = ? AND is_placeholder = 1
+    ORDER BY received_at DESC LIMIT 1
+  `).get(contact.id, channel_id);
+  if (placeholder) {
+    linkAsana(placeholder.id);
+    return res.json({ ok: true, message_id: placeholder.id, is_new: false, contact_id: contact.id });
+  }
+
+  // 5. Geen historie → leeg placeholder-bericht dat open blijft tot de eerste reply.
+  const newId = uuid();
+  db.prepare(`
+    INSERT INTO messages (id, channel_id, contact_id, direction, subject, snippet, body_text,
+      status, priority, received_at, created_at, updated_at, is_placeholder)
+    VALUES (?, ?, ?, 'outbound', ?, ?, NULL, 'open', 'medium', datetime('now'), datetime('now'), datetime('now'), 1)
+  `).run(
+    newId, channel_id, contact.id,
+    channel_type === 'email' ? `Bericht aan ${contact.name}` : `Chat met ${contact.name}`,
+    '(nieuw gesprek)',
+  );
+  linkAsana(newId);
+  res.json({ ok: true, message_id: newId, is_new: true, contact_id: contact.id });
+});
 
 // POST /api/messages/compose — nieuw bericht (geen reply)
 router.post('/compose', upload.array('files', 10), async (req, res, next) => {

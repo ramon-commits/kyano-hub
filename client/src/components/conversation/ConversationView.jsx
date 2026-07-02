@@ -329,6 +329,25 @@ export default function ConversationView({
           </button>
         </header>
 
+        {/* Gelinkt aan een Asana-taak (deze conversatie is via een taak geopend). Bij het
+            versturen van een reply wordt de taak automatisch afgevinkt. */}
+        {m.asana_link_id ? (
+          <div className="mx-4 mt-2 flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-xs">
+            <span className="flex items-center gap-2 text-purple-700">
+              <i className="fa-brands fa-asana" />
+              Gelinkt aan Asana-taak — bij versturen wordt de taak afgevinkt.
+            </span>
+            <a
+              href={`https://app.asana.com/0/0/${m.asana_link_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-purple-600 hover:underline"
+            >
+              Bekijk taak
+            </a>
+          </div>
+        ) : null}
+
         {/* Asana-taak: universele "Neem contact op"-kaart. Knoppen puur op basis van
             wat beschikbaar is (email en/of telefoon) — geen keyword-detectie meer. */}
         {showAsanaCard ? (
