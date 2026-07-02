@@ -106,13 +106,12 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {isAsanaTask ? (
+        {isAsanaTask && !expanded ? (
           <button
-            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
-            className="flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+            onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+            className="flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
           >
-            <i className={`fa-solid ${expanded ? 'fa-chevron-up' : 'fa-chevron-down'}`} />
-            {expanded ? 'Sluit' : 'Bekijk'}
+            Bekijk <i className="fa-solid fa-chevron-down text-[10px]" />
           </button>
         ) : null}
         {isPinned ? (
@@ -186,7 +185,7 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
     </div>
 
     {expanded && isAsanaTask ? (
-      <ExpandedAsana m={m} onAsanaAction={onAsanaAction} />
+      <ExpandedAsana m={m} onAsanaAction={onAsanaAction} onFastDone={onFastDone} onClose={() => setExpanded(false)} />
     ) : null}
     </div>
   );
@@ -194,118 +193,172 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
 
 // Uitgeklapte Asana-taak: klant-hero, volledige klantinfo (custom fields), contact-chips,
 // assignee en inline actie-knoppen. Knoppen puur op basis van wat beschikbaar is.
-function ExpandedAsana({ m, onAsanaAction }) {
+// Formatteer een custom-field waarde: ISO-datums → nl-NL korte datum, rest ongewijzigd.
+function formatFieldValue(value) {
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  return s;
+}
+
+function FieldRow({ label, value, colSpan = 1 }) {
+  return (
+    <div className={`rounded-md border border-gray-200 bg-white px-3 py-2 ${colSpan === 2 ? 'col-span-2' : ''}`}>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-0.5 text-xs text-gray-800">{value}</p>
+    </div>
+  );
+}
+
+// Uitgeklapte Asana-taak als nette kaart (stijl van de Studio/Mila-kaart): header met
+// avatar + titel + Asana-badge + assignee, een klant-info blok met alle custom fields,
+// een samenvatting en onderaan de actie-knoppen.
+function ExpandedAsana({ m, onAsanaAction, onFastDone, onClose }) {
   const stop = (e) => e.stopPropagation();
-  const description = m.body_text || m.snippet;
 
   let cf = {};
   try { cf = m.asana_custom_fields ? JSON.parse(m.asana_custom_fields) : {}; } catch { cf = {}; }
   const customerName = cf['Account name'] || cf['Customer'] || cf['Klant'] || cf['Company'] || null;
-  // Velden die we elders al tonen niet nog eens in de grid herhalen.
-  const excluded = ['Account name', 'Customer', 'Klant', 'Company', 'Country', 'Contact', 'Email', 'Phone', 'Contact Email', 'Contact Phone'];
-  const gridFields = Object.entries(cf).filter(([k, v]) => !excluded.includes(k) && v !== null && v !== '');
+  const country = cf['Country'];
+  const status = cf['Account Status'];
+  const assigneeShort = m.asana_assignee_email ? m.asana_assignee_email.split('@')[0] : null;
 
-  const emailChannelLabel = m.asana_email_channel === 'gmail-3' ? 'Dach'
-    : m.asana_email_channel === 'gmail-1' ? 'Ramon' : 'FitAid';
+  // Bekende velden met nette NL-labels; overige velden generiek eronder.
+  const KNOWN = [
+    ['Customer since', 'Klant sinds', 1],
+    ['Last Order Date', 'Laatste bestelling', 1],
+    ['Last Order', 'Laatste bestelling', 1],
+    ['Total Orders', 'Totaal bestellingen', 1],
+    ['Average order value', 'Gem. bestelwaarde', 1],
+    ['Last two order amounts', 'Laatste 2 orders', 2],
+    ['Contact', 'Contact', 2],
+  ];
+  const shownKeys = new Set(['Account name', 'Customer', 'Klant', 'Company', 'Country', 'Account Status', ...KNOWN.map(([k]) => k)]);
+  const rows = [];
+  for (const [key, label, span] of KNOWN) {
+    if (cf[key] !== undefined && cf[key] !== null && cf[key] !== '') {
+      const prefix = key === 'Average order value' ? '€' : '';
+      rows.push({ key, label, span, value: `${prefix}${formatFieldValue(cf[key])}` });
+    }
+  }
+  for (const [key, value] of Object.entries(cf)) {
+    if (!shownKeys.has(key) && value !== null && value !== '') {
+      rows.push({ key, label: key, span: 1, value: formatFieldValue(value) });
+    }
+  }
+
+  const asanaUrl = m.deep_link || `https://app.asana.com/0/0/${m.external_id}`;
 
   return (
-    <div className="border-t border-gray-100 bg-purple-50/30 px-4 py-4" onClick={stop}>
-      <div className="ml-14 space-y-4">
-        {customerName ? (
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 font-semibold text-purple-700">
-              {customerName.slice(0, 2).toUpperCase()}
+    <div className="border-t border-purple-100 bg-purple-50/30 px-4 py-4 sm:px-6 sm:py-5" onClick={stop}>
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        {/* HEADER */}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-100">
+              <i className="fa-brands fa-asana text-lg text-purple-600" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">{customerName}</h3>
-              {cf['Country'] || cf['Account Status'] ? (
-                <p className="text-xs text-gray-500">
-                  {[cf['Country'], cf['Account Status']].filter(Boolean).join(' · ')}
-                </p>
-              ) : null}
+              <h3 className="text-base font-semibold text-gray-900">{m.subject}</h3>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                  <i className="fa-brands fa-asana text-[10px]" /> Asana
+                </span>
+                <span className="text-xs text-gray-500">
+                  {assigneeShort || 'Onbekend'}
+                  {m.received_at ? ` · ${formatDateShort(parseDateSafe(m.received_at))}` : ''}
+                </span>
+              </div>
             </div>
           </div>
-        ) : null}
-
-        {description ? (
-          <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700">
-            {description}
-          </div>
-        ) : null}
-
-        {gridFields.length ? (
-          <div className="grid grid-cols-2 gap-2">
-            {gridFields.map(([key, value]) => (
-              <div key={key} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                <p className="text-xs text-gray-500">{key}</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-900">{String(value)}</p>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap gap-2">
-          {m.asana_assignee_email ? (
-            <span className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-700">
-              <i className="fa-solid fa-user text-blue-400" />
-              Toegewezen: {m.asana_assignee_email}
-            </span>
-          ) : null}
-          {m.asana_contact_email ? (
-            <span className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700">
-              <i className="fa-solid fa-envelope text-gray-400" />
-              {m.asana_contact_email}
-            </span>
-          ) : null}
-          {m.asana_contact_phone ? (
-            <span className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700">
-              <i className="fa-solid fa-phone text-gray-400" />
-              {m.asana_contact_phone}
-            </span>
-          ) : null}
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-50"
+          >
+            Sluiten <i className="fa-solid fa-chevron-up text-[10px]" />
+          </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs text-gray-500">Neem contact op:</span>
+        {/* KLANT INFO */}
+        {customerName ? (
+          <div className="mb-3 rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Klant</p>
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700">
+                {customerName.slice(0, 2).toUpperCase()}
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-900">{customerName}</h4>
+                {country || status ? (
+                  <p className="text-xs text-gray-500">{[country, status].filter(Boolean).join(' · ')}</p>
+                ) : null}
+              </div>
+            </div>
+            {rows.length ? (
+              <div className="grid grid-cols-2 gap-2">
+                {rows.map((r) => <FieldRow key={r.key} label={r.label} value={r.value} colSpan={r.span} />)}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
+        {/* SAMENVATTING */}
+        {m.body_text ? (
+          <div className="mb-3 rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Samenvatting</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{m.body_text}</p>
+            {assigneeShort ? (
+              <div className="mt-3 flex items-center gap-1.5 border-t border-gray-200 pt-3 text-xs text-gray-500">
+                <i className="fa-solid fa-link" />
+                <span>Asana · toegewezen aan {assigneeShort}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* ACTIE KNOPPEN */}
+        <div className="flex flex-wrap items-center gap-2">
           {m.asana_contact_email ? (
             <button
               onClick={() => onAsanaAction?.(m, 'email')}
-              className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700"
+              className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-700"
             >
               <i className="fa-solid fa-envelope" /> Email
-              <span className="text-xs opacity-75">(vanaf {emailChannelLabel})</span>
             </button>
           ) : null}
-
           {m.asana_contact_phone ? (
             <button
               onClick={() => onAsanaAction?.(m, 'whatsapp')}
-              className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-green-700"
             >
               <i className="fa-brands fa-whatsapp" /> WhatsApp
-              <span className="text-xs opacity-75">FitAid Business</span>
             </button>
           ) : null}
-
           {m.asana_contact_phone ? (
             <a
               href={`tel:${m.asana_contact_phone}`}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
             >
               <i className="fa-solid fa-phone" /> Bel
             </a>
           ) : null}
-
-          {m.deep_link ? (
-            <a
-              href={m.deep_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+          <a
+            href={asanaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <i className="fa-brands fa-asana" /> Bekijk in Asana
+          </a>
+          {onFastDone ? (
+            <button
+              onClick={() => onFastDone(m)}
+              className="ml-auto flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
             >
-              <i className="fa-brands fa-asana" /> Open in Asana
-            </a>
+              <i className="fa-solid fa-check" /> Afvinken
+            </button>
           ) : null}
         </div>
       </div>
