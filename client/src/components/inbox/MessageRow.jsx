@@ -185,7 +185,7 @@ export default function MessageRow({ message, selected, onClick, onSnooze, onDon
     </div>
 
     {expanded && isAsanaTask ? (
-      <ExpandedAsana m={m} onAsanaAction={onAsanaAction} onFastDone={onFastDone} onClose={() => setExpanded(false)} />
+      <ExpandedAsana m={m} onOpen={onClick} onFastDone={onFastDone} onClose={() => setExpanded(false)} />
     ) : null}
     </div>
   );
@@ -215,7 +215,7 @@ function FieldRow({ label, value, colSpan = 1 }) {
 // Uitgeklapte Asana-taak als nette kaart (stijl van de Studio/Mila-kaart): header met
 // avatar + titel + Asana-badge + assignee, een klant-info blok met alle custom fields,
 // een samenvatting en onderaan de actie-knoppen.
-function ExpandedAsana({ m, onAsanaAction, onFastDone, onClose }) {
+function ExpandedAsana({ m, onOpen, onFastDone, onClose }) {
   const stop = (e) => e.stopPropagation();
 
   let cf = {};
@@ -322,7 +322,7 @@ function ExpandedAsana({ m, onAsanaAction, onFastDone, onClose }) {
         <div className="flex flex-wrap items-center gap-2">
           {m.asana_contact_email ? (
             <button
-              onClick={() => onAsanaAction?.(m, 'email')}
+              onClick={() => onOpen?.()}
               className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-700"
             >
               <i className="fa-solid fa-envelope" /> Email
@@ -330,7 +330,7 @@ function ExpandedAsana({ m, onAsanaAction, onFastDone, onClose }) {
           ) : null}
           {m.asana_contact_phone ? (
             <button
-              onClick={() => onAsanaAction?.(m, 'whatsapp')}
+              onClick={() => onOpen?.()}
               className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-green-700"
             >
               <i className="fa-brands fa-whatsapp" /> WhatsApp

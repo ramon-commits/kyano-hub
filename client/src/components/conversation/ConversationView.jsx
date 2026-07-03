@@ -8,6 +8,7 @@ import ThreadStatusBar from './ThreadStatusBar.jsx';
 import ThreadSummaryPanel from './ThreadSummaryPanel.jsx';
 import ThreadAiSummaryCard from './ThreadAiSummaryCard.jsx';
 import ScheduleFollowUpModal from '../modals/ScheduleFollowUpModal.jsx';
+import AsanaInfoScreen from './AsanaInfoScreen.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import ChannelBadge from '../shared/ChannelBadge.jsx';
 import PriorityBadge from '../shared/PriorityBadge.jsx';
@@ -95,18 +96,24 @@ export default function ConversationView({
     );
   }
 
+  // Een Asana-taak openen → eerst het info-scherm (klantdata + wat er moet gebeuren).
+  // Pas na een kanaalkeuze opent via onAsanaAction het echte gesprek (het typ-scherm).
+  if (m.channel_id === 'asana-1') {
+    return (
+      <AsanaInfoScreen
+        message={m}
+        onBack={onBack}
+        onStartCompose={(channel) => onAsanaAction?.(m, channel)}
+      />
+    );
+  }
+
   const isEmail = m.channel_type === 'email';
   const threadMessages = thread?.messages || [m];
   // Placeholder-berichten (leeg 'nieuw gesprek') nooit in de thread tonen. Zijn er geen
   // echte berichten, dan is dit een nieuw gesprek → lege state + composer.
   const visibleMessages = threadMessages.filter((tm) => !tm.is_placeholder);
   const isNewConversation = visibleMessages.length === 0;
-
-  // Asana-to-do: contact uit de taak (of gematcht contact) → "Neem contact op"-kaart.
-  const isAsana = m.channel_id === 'asana-1';
-  const asanaEmail = m.asana_contact_email || m.contact_email || null;
-  const asanaPhone = m.asana_contact_phone || m.contact_phone || null;
-  const showAsanaCard = isAsana && (asanaEmail || asanaPhone);
 
   // Voor chat threads: tel unieke inbound senders → groepschat als >= 2
   const isChat = m.channel_type === 'whatsapp' || m.channel_type === 'linkedin' || m.channel_type === 'instagram';
@@ -355,55 +362,6 @@ export default function ConversationView({
             >
               Bekijk taak
             </a>
-          </div>
-        ) : null}
-
-        {/* Asana-taak: universele "Neem contact op"-kaart. Knoppen puur op basis van
-            wat beschikbaar is (email en/of telefoon) — geen keyword-detectie meer. */}
-        {showAsanaCard ? (
-          <div className="mx-4 mt-3 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
-                  <i className="fa-brands fa-asana mr-1" />Asana taak
-                </p>
-                <h3 className="mt-1 text-lg font-semibold text-gray-900">Neem contact op met deze klant</h3>
-                <div className="mt-2 space-y-1 text-sm text-gray-600">
-                  {asanaEmail ? (
-                    <div className="flex items-center gap-2">
-                      <i className="fa-solid fa-envelope text-gray-400 w-4" />
-                      <a href={`mailto:${asanaEmail}`} className="hover:underline">{asanaEmail}</a>
-                    </div>
-                  ) : null}
-                  {asanaPhone ? (
-                    <div className="flex items-center gap-2">
-                      <i className="fa-solid fa-phone text-gray-400 w-4" />
-                      <a href={`tel:${asanaPhone}`} className="hover:underline">{asanaPhone}</a>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-blue-100">
-              <span className="text-xs text-gray-500">Stuur bericht via:</span>
-              {asanaEmail ? (
-                <button
-                  onClick={() => onAsanaAction?.(m, 'email')}
-                  className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-                >
-                  <i className="fa-solid fa-envelope" /> Email
-                </button>
-              ) : null}
-              {asanaPhone ? (
-                <button
-                  onClick={() => onAsanaAction?.(m, 'whatsapp')}
-                  className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
-                >
-                  <i className="fa-brands fa-whatsapp" /> WhatsApp
-                </button>
-              ) : null}
-            </div>
           </div>
         ) : null}
 
