@@ -104,6 +104,10 @@ export default function ConversationView({
         message={m}
         onBack={onBack}
         onStartCompose={(channel) => onAsanaAction?.(m, channel)}
+        onDone={onDone ? (msg) => onDone(msg) : null}
+        onSnooze={onSnooze ? (msg) => onSnooze(msg) : null}
+        onArchive={onArchive ? (msg) => onArchive(msg) : null}
+        onUrgent={onUrgent ? (msg) => onUrgent(msg) : null}
       />
     );
   }

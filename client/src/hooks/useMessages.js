@@ -175,8 +175,9 @@ export function usePriorityMessage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, priority }) => api.patch(`/messages/${id}/priority`, { priority }),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['message', vars.id] });
     },
   });
 }

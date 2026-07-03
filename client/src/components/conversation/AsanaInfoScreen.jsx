@@ -19,7 +19,7 @@ function OrderField({ label, value }) {
   );
 }
 
-export default function AsanaInfoScreen({ message, onStartCompose, onBack }) {
+export default function AsanaInfoScreen({ message, onStartCompose, onBack, onDone, onSnooze, onArchive, onUrgent }) {
   const m = message;
   let cf = {};
   try { cf = m.asana_custom_fields ? JSON.parse(m.asana_custom_fields) : {}; } catch { cf = {}; }
@@ -176,6 +176,37 @@ export default function AsanaInfoScreen({ message, onStartCompose, onBack }) {
           <a href={asanaUrl} target="_blank" rel="noopener noreferrer" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50">
             <i className="fa-brands fa-asana" /> Open taak in Asana
           </a>
+
+          {/* Direct afhandelen zonder terug naar de inbox — springt door naar het volgende bericht. */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4">
+            <span className="mr-1 text-xs text-gray-500">Of direct afhandelen:</span>
+            {onDone ? (
+              <button onClick={() => onDone(m)} className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700">
+                <i className="fa-solid fa-check" /> Afgehandeld
+              </button>
+            ) : null}
+            {onSnooze ? (
+              <button onClick={() => onSnooze(m)} className="flex items-center gap-2 rounded-lg bg-orange-100 px-3 py-2 text-sm font-medium text-orange-700 transition-colors hover:bg-orange-200">
+                <i className="fa-solid fa-clock" /> Snooze
+              </button>
+            ) : null}
+            {onArchive ? (
+              <button onClick={() => onArchive(m)} className="flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200">
+                <i className="fa-solid fa-box-archive" /> Archiveer
+              </button>
+            ) : null}
+            {onUrgent ? (
+              <button
+                onClick={() => onUrgent(m)}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  m.priority === 'high' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-50 text-red-700 hover:bg-red-100'
+                }`}
+              >
+                <i className="fa-solid fa-circle-exclamation" />
+                {m.priority === 'high' ? 'Urgent' : 'Markeer urgent'}
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
