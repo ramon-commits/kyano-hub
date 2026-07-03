@@ -1192,28 +1192,52 @@ router.post('/:id/forward', upload.array('files', 10), async (req, res, next) =>
 
     const origText = original.body_text || (original.snippet || '');
 
-    // Bijlagen downloaden uit Gmail en meesturen in de doorgestuurde mail
-    const attachmentMeta = parseForwardAttachments(original.attachments_json);
+    // Bijlagen uit ALLE berichten in de thread downloaden — de boekhouder wil ook
+    // facturen/bijlagen uit eerdere berichten, niet alleen het geselecteerde bericht.
     const downloadedAttachments = [];
+    const seenAttKeys = new Set(); // dedup op filename + grootte (zelfde bijlage in meerdere berichten)
     let totalBytes = 0;
-    if (attachmentMeta.length) {
-      if (!original.external_id) {
-        return res.status(400).json({ error: 'Origineel bericht heeft geen Gmail message-id — bijlagen niet ophaalbaar' });
+    let skippedAttachments = 0;
+
+    // Clients per kanaal cachen — een thread zit meestal op één kanaal, maar dit is veilig.
+    const clientCache = new Map();
+    const gmailFor = (channelId) => {
+      if (!clientCache.has(channelId)) {
+        const client = getClient(channelId);
+        clientCache.set(channelId, client ? google.gmail({ version: 'v1', auth: client }) : null);
       }
-      const client = getClient(original.channel_id);
-      if (!client) {
-        return res.status(400).json({ error: 'Email-kanaal niet verbonden — bijlagen niet ophaalbaar' });
+      return clientCache.get(channelId);
+    };
+
+    for (const tm of threadMsgs) {
+      const metas = parseForwardAttachments(tm.attachments_json);
+      if (!metas.length) continue;
+      const isOriginal = tm.id === original.id;
+
+      if (!tm.external_id) {
+        if (isOriginal) return res.status(400).json({ error: 'Origineel bericht heeft geen Gmail message-id — bijlagen niet ophaalbaar' });
+        skippedAttachments += metas.length;
+        continue;
       }
-      const gmail = google.gmail({ version: 'v1', auth: client });
-      for (const att of attachmentMeta) {
+      const gmail = gmailFor(tm.channel_id);
+      if (!gmail) {
+        if (isOriginal) return res.status(400).json({ error: 'Email-kanaal niet verbonden — bijlagen niet ophaalbaar' });
+        skippedAttachments += metas.length;
+        continue;
+      }
+
+      for (const att of metas) {
         try {
           const { data } = await gmail.users.messages.attachments.get({
             userId: 'me',
-            messageId: original.external_id,
+            messageId: tm.external_id,
             id: att.id,
           });
-          if (!data?.data) continue;
+          if (!data?.data) { skippedAttachments += 1; continue; }
           const buffer = Buffer.from(data.data, 'base64url');
+          const key = `${att.filename || 'bestand'}:${buffer.length}`;
+          if (seenAttKeys.has(key)) continue;
+          seenAttKeys.add(key);
           totalBytes += buffer.length;
           if (totalBytes > FORWARD_MAX_TOTAL_BYTES) {
             return res.status(413).json({
@@ -1227,13 +1251,19 @@ router.post('/:id/forward', upload.array('files', 10), async (req, res, next) =>
             size: buffer.length,
           });
         } catch (err) {
-          console.error(`forward: kon bijlage ${att.filename} niet downloaden:`, err.message);
-          return res.status(502).json({ error: `Bijlage ${att.filename || ''} ophalen mislukt: ${err.message}` });
+          // Origineel bericht: hard falen zodat Ramon het merkt. Overige thread-berichten
+          // (bv. eigen outbound met synthetische bijlage-id) → overslaan, forward niet blokkeren.
+          if (isOriginal) {
+            console.error(`forward: kon bijlage ${att.filename} niet downloaden:`, err.message);
+            return res.status(502).json({ error: `Bijlage ${att.filename || ''} ophalen mislukt: ${err.message}` });
+          }
+          skippedAttachments += 1;
+          console.error(`forward: bijlage ${att.filename} uit bericht ${tm.id} overgeslagen:`, err.message);
         }
       }
     }
 
-    // FIX 2 — combineer originele bijlagen met nieuw geüploade bestanden
+    // FIX 2 — combineer thread-bijlagen met nieuw geüploade bestanden
     const uploadedAttachments = filesToAttachments(req.files);
     for (const att of uploadedAttachments) {
       totalBytes += att.size || (att.content ? att.content.length : 0);
@@ -1294,6 +1324,8 @@ router.post('/:id/forward', upload.array('files', 10), async (req, res, next) =>
       from: result.fromEmail,
       to: to.trim(),
       attachments: localAttachments.length,
+      thread_message_count: threadMsgs.length,
+      skipped_attachments: skippedAttachments,
       original_id: req.params.id,
     });
   } catch (e) { next(e); }

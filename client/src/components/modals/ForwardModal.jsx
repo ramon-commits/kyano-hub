@@ -13,6 +13,7 @@ export default function ForwardModal({ open, onClose, message }) {
   const [sending, setSending] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [threadInfo, setThreadInfo] = useState(null);
   const debounceRef = useRef(null);
   const fileInputRef = useRef(null);
   const toast = useToast();
@@ -27,7 +28,24 @@ export default function ForwardModal({ open, onClose, message }) {
     setFiles([]);
     setSuggestions([]);
     setSuggestionsOpen(false);
+    setThreadInfo(null);
   }, [open]);
+
+  // Preview: haal op hoeveel berichten + bijlagen er meegestuurd worden (hele thread).
+  useEffect(() => {
+    if (!open || !message?.id) return;
+    let cancelled = false;
+    api.get(`/messages/${message.id}/thread-summary`)
+      .then((data) => {
+        if (cancelled) return;
+        setThreadInfo({
+          message_count: data.total_messages || 1,
+          attachment_count: data.attachment_count || 0,
+        });
+      })
+      .catch(() => { /* preview is optioneel */ });
+    return () => { cancelled = true; };
+  }, [open, message?.id]);
 
   // Autocomplete op contacten — debounce 200ms, alleen contacten met een email
   useEffect(() => {
@@ -80,7 +98,8 @@ export default function ForwardModal({ open, onClose, message }) {
       for (const f of files) formData.append('files', f, f.name);
       const r = await api.postForm(`/messages/${message.id}/forward`, formData);
       const attLabel = r.attachments ? ` + ${r.attachments} bijlage${r.attachments === 1 ? '' : 'n'}` : '';
-      toast.success(`Doorgestuurd naar ${r.to}${attLabel}`, 'Verstuurd');
+      const threadLabel = r.thread_message_count > 1 ? ` (${r.thread_message_count} berichten)` : '';
+      toast.success(`Doorgestuurd naar ${r.to}${threadLabel}${attLabel}`, 'Verstuurd');
       onClose?.();
     } catch (e) {
       if (e.status === 400) toast.error(e.message);
@@ -122,6 +141,20 @@ export default function ForwardModal({ open, onClose, message }) {
       }
     >
       <div className="space-y-4 p-6">
+        {threadInfo && threadInfo.message_count > 1 ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <div className="flex items-center gap-2 text-sm text-blue-800">
+              <i className="fa-solid fa-circle-info" />
+              <span>
+                De volledige conversatie (<strong>{threadInfo.message_count} berichten</strong>) wordt meegestuurd
+                {threadInfo.attachment_count > 0
+                  ? <> + <strong>{threadInfo.attachment_count} bijlage{threadInfo.attachment_count === 1 ? '' : 'n'}</strong></>
+                  : null}.
+              </span>
+            </div>
+          </div>
+        ) : null}
+
         <div className="relative">
           <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-gray-500">Aan</label>
           <input
