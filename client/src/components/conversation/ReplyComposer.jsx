@@ -46,6 +46,13 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [templateSearch, setTemplateSearch] = useState('');
+  const [activeCategory, setActiveCategory] = useState('alle');
+  // Toegepaste template: id (bijlages meesturen), html (rich body) + snapshot om te
+  // bepalen of de gebruiker de tekst heeft aangepast (dan geen stale HTML meesturen).
+  const [activeTemplateId, setActiveTemplateId] = useState(null);
+  const [activeTemplateHtml, setActiveTemplateHtml] = useState(null);
+  const [appliedSnapshot, setAppliedSnapshot] = useState(null);
+  const [activeTemplateAtts, setActiveTemplateAtts] = useState([]);
   const ref = useRef(null);
   const emojiWrapRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -69,17 +76,30 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
   };
 
   const filteredTemplates = quickReplies.filter((t) => {
+    if (activeCategory !== 'alle' && (t.category || 'algemeen') !== activeCategory) return false;
     if (!templateSearch) return true;
     const q = templateSearch.toLowerCase();
     return t.title?.toLowerCase().includes(q) || t.body?.toLowerCase().includes(q);
   });
 
-  const applyTemplate = (t) => {
-    setTextWithFocus(applyVars(t.body));
-    useTemplateMut.mutate({ id: t.id });
+  const applyTemplate = async (t) => {
+    let full = t;
+    try {
+      const r = await api.get(`/quick-replies/${t.id}/full`);
+      full = r.template || t;
+    } catch { /* val terug op lijst-data */ }
+    const plain = applyVars(full.body);
+    const html = full.body_html ? applyVars(full.body_html) : null;
+    setActiveTemplateId(full.id);
+    setActiveTemplateHtml(html);
+    setAppliedSnapshot(plain);
+    setActiveTemplateAtts(full.attachments || []);
+    setTextWithFocus(plain);
+    useTemplateMut.mutate({ id: full.id });
     setShowTemplates(false);
     setTemplateSearch('');
-    toast.success(`Template "${t.title}" toegepast`);
+    const n = full.attachments?.length || 0;
+    toast.success(`Template "${full.title}" toegepast${n ? ` (${n} bijlage${n > 1 ? 's' : ''})` : ''}`);
   };
 
   const removeTemplate = (id) => {
@@ -90,20 +110,17 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
     });
   };
 
+  // Maakt/wijzigt de template en geeft het id terug (de modal uploadt daarna eventuele
+  // bijlages). Gooit door bij fouten zodat de modal open blijft.
   const saveTemplate = async (data) => {
-    try {
-      if (editingTemplate) {
-        await updateTemplate.mutateAsync({ id: editingTemplate.id, ...data });
-        toast.success('Template opgeslagen');
-      } else {
-        await createTemplate.mutateAsync(data);
-        toast.success('Template aangemaakt');
-      }
-      setShowTemplateEditor(false);
-      setEditingTemplate(null);
-    } catch (e) {
-      toast.error(e.message || 'Opslaan mislukt');
+    if (editingTemplate) {
+      await updateTemplate.mutateAsync({ id: editingTemplate.id, ...data });
+      toast.success('Template opgeslagen');
+      return editingTemplate.id;
     }
+    const r = await createTemplate.mutateAsync(data);
+    toast.success('Template aangemaakt');
+    return r.id;
   };
 
   useEffect(() => {
@@ -117,6 +134,10 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
     setAttachError(null);
     setVariants(null);
     setShowLangPicker(false);
+    setActiveTemplateId(null);
+    setActiveTemplateHtml(null);
+    setAppliedSnapshot(null);
+    setActiveTemplateAtts([]);
   }, [defaultAccount, messageId]);
 
   // Cleanup blob URLs voor previews
@@ -283,11 +304,24 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
       return;
     }
     if (!text.trim()) return;
-    const ok = await onSend?.({ text, cc, bcc });
+    // Rich HTML alleen meesturen als de tekst niet handmatig is aangepast na toepassen
+    // van de template (anders is de HTML stale → val terug op platte tekst).
+    const unedited = activeTemplateHtml && text === appliedSnapshot;
+    const ok = await onSend?.({
+      text,
+      cc,
+      bcc,
+      html: unedited ? activeTemplateHtml : null,
+      templateId: activeTemplateId || null,
+    });
     if (ok) {
       setText('');
       setCc('');
       setBcc('');
+      setActiveTemplateId(null);
+      setActiveTemplateHtml(null);
+      setAppliedSnapshot(null);
+      setActiveTemplateAtts([]);
     }
   };
 
@@ -499,6 +533,18 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
       {attachError ? (
         <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
           <i className="fa-solid fa-triangle-exclamation mr-1" />{attachError}
+        </div>
+      ) : null}
+
+      {activeTemplateAtts.length > 0 ? (
+        <div className="mb-2 flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[11px] text-gray-400">Gaat mee:</span>
+          {activeTemplateAtts.map((att) => (
+            <span key={att.id} className="flex items-center gap-1.5 rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700">
+              <i className="fa-solid fa-paperclip" />
+              {att.filename}
+            </span>
+          ))}
         </div>
       ) : null}
 
@@ -714,6 +760,26 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
                   placeholder="Zoek template…"
                   className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-500"
                 />
+              </div>
+
+              <div className="flex items-center gap-1 overflow-x-auto border-b border-gray-100 px-2 py-2 scrollbar-thin">
+                {['alle', 'algemeen', 'sales', 'support', 'follow-up', 'afscheid'].map((cat) => {
+                  const count = cat === 'alle'
+                    ? quickReplies.length
+                    : quickReplies.filter((t) => (t.category || 'algemeen') === cat).length;
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setActiveCategory(cat)}
+                      className={`flex-shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        activeCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      <span className="ml-1 opacity-70">({count})</span>
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="flex-1 overflow-y-auto p-1 scrollbar-thin">

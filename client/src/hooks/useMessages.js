@@ -44,8 +44,8 @@ export function useThreadSummary(messageId) {
 export function useReplyMessage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body_text, body_html, cc, bcc }) =>
-      api.post(`/messages/${id}/reply`, { body_text, body_html, cc, bcc }),
+    mutationFn: ({ id, body_text, body_html, cc, bcc, template_id }) =>
+      api.post(`/messages/${id}/reply`, { body_text, body_html, cc, bcc, template_id }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['messages'] });
       qc.invalidateQueries({ queryKey: ['thread'] });

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import fs from 'node:fs';
 import { google } from 'googleapis';
 import db from '../db/init.js';
 import { v4 as uuid } from 'uuid';
@@ -930,6 +931,18 @@ router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
 
     const to = original.contact_email;
     if (!to) return res.status(400).json({ error: 'No contact email to reply to' });
+
+    // Template-bijlages automatisch meesturen (als er een template is toegepast).
+    if (req.body.template_id) {
+      const tplAtts = db.prepare('SELECT filename, mime_type, file_path FROM template_attachments WHERE template_id = ?').all(req.body.template_id);
+      for (const att of tplAtts) {
+        try {
+          attachments.push({ content: fs.readFileSync(att.file_path), filename: att.filename, mimeType: att.mime_type });
+        } catch (e) {
+          console.error(`[TEMPLATE] bijlage ${att.filename} kon niet gelezen worden: ${e.message}`);
+        }
+      }
+    }
 
     // Threading headers
     const inReplyTo = original.in_reply_to || null;

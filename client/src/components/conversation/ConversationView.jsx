@@ -117,13 +117,15 @@ export default function ConversationView({
   const isGroupChat = isChat && uniqueInboundSenders.size >= 2;
   const participantCount = isGroupChat ? uniqueInboundSenders.size + 1 : 0; // +1 voor Ramon
 
-  const handleSend = async ({ text, cc, bcc }) => {
+  const handleSend = async ({ text, cc, bcc, html, templateId }) => {
     try {
       const result = await replyMut.mutateAsync({
         id: messageId,
         body_text: text,
+        body_html: html || null,
         cc: cc || null,
         bcc: bcc || null,
+        template_id: templateId || null,
       });
       if (onReplySent) {
         onReplySent({

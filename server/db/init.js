@@ -66,6 +66,9 @@ const SAFE_ALTERS = [
   "ALTER TABLE quick_replies ADD COLUMN subject TEXT",
   "ALTER TABLE quick_replies ADD COLUMN category TEXT DEFAULT 'algemeen'",
   "ALTER TABLE quick_replies ADD COLUMN usage_count INTEGER DEFAULT 0",
+  // Templates: rich-text body (HTML met smart links) en een voorkeur-afzenderkanaal.
+  "ALTER TABLE quick_replies ADD COLUMN body_html TEXT",
+  "ALTER TABLE quick_replies ADD COLUMN preferred_channel_id TEXT",
   // Stijlprofiel velden voor automatische stijl-analyse
   "ALTER TABLE style_profiles ADD COLUMN profile_text TEXT",
   "ALTER TABLE style_profiles ADD COLUMN email_count INTEGER DEFAULT 0",
@@ -89,6 +92,21 @@ db.exec(`
     PRIMARY KEY (message_id, asana_task_id)
   )
 `);
+
+// Bijlages die aan een template (quick_reply) hangen en automatisch meegestuurd worden.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS template_attachments (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    file_size INTEGER,
+    file_path TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (template_id) REFERENCES quick_replies(id) ON DELETE CASCADE
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_template_attachments_template ON template_attachments(template_id)');
 
 // Migration: channels.type CHECK moet 'todo' toestaan (voor het to-do systeem).
 // SQLite kan een CHECK niet via ALTER aanpassen — dus rebuild van de tabel als de
