@@ -460,6 +460,8 @@ export default function ConversationView({
           messageId={messageId}
           channelType={m.channel_type}
           defaultAccount={m.channel_account}
+          contactName={m.contact_name}
+          contactCompany={m.contact_company}
           sending={replyMut.isPending || replyMediaMut.isPending || replyEmailAttachMut.isPending}
           onSend={handleSend}
           onSendMedia={handleSendMedia}

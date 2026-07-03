@@ -61,6 +61,11 @@ const SAFE_ALTERS = [
   // Placeholder-bericht: een leeg 'nieuw gesprek' dat via een Asana-taak is gestart
   // en nog geen echte historie heeft. Verdwijnt zodra er een echt bericht binnenkomt.
   "ALTER TABLE messages ADD COLUMN is_placeholder INTEGER DEFAULT 0",
+  // Templates (bovenop quick_replies): onderwerp (email), categorie en gebruiksteller
+  // zodat de meest gebruikte templates bovenaan komen.
+  "ALTER TABLE quick_replies ADD COLUMN subject TEXT",
+  "ALTER TABLE quick_replies ADD COLUMN category TEXT DEFAULT 'algemeen'",
+  "ALTER TABLE quick_replies ADD COLUMN usage_count INTEGER DEFAULT 0",
   // Stijlprofiel velden voor automatische stijl-analyse
   "ALTER TABLE style_profiles ADD COLUMN profile_text TEXT",
   "ALTER TABLE style_profiles ADD COLUMN email_count INTEGER DEFAULT 0",

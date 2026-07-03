@@ -33,3 +33,11 @@ export function useDeleteQuickReply() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['quick-replies'] }),
   });
 }
+
+export function useUseQuickReply() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => api.post(`/quick-replies/${id}/use`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['quick-replies'] }),
+  });
+}

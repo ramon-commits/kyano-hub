@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Picker from '@emoji-mart/react';
 import emojiData from '@emoji-mart/data';
-import { useQuickReplies } from '../../hooks/useQuickReplies.js';
+import { useQuickReplies, useCreateQuickReply, useUpdateQuickReply, useDeleteQuickReply, useUseQuickReply } from '../../hooks/useQuickReplies.js';
 import { useToast } from '../../hooks/useToast.jsx';
 import { api } from '../../lib/api.js';
+import TemplateEditorModal from './TemplateEditorModal.jsx';
 
 // Detect a /shortcut at the current cursor: must be at start, or preceded by whitespace.
 function findTriggerAt(text, caret) {
@@ -28,7 +29,7 @@ const LANGS = [
   ['nl', 'Nederlands'],
 ];
 
-export default function ReplyComposer({ messageId, channelType, defaultAccount, sending, onSend, onSendMedia, onCopy }) {
+export default function ReplyComposer({ messageId, channelType, defaultAccount, sending, onSend, onSendMedia, onCopy, contactName, contactCompany }) {
   const [text, setText] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [cc, setCc] = useState('');
@@ -41,14 +42,69 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
   const [loadingAction, setLoadingAction] = useState(null);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [variants, setVariants] = useState(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [templateSearch, setTemplateSearch] = useState('');
   const ref = useRef(null);
   const emojiWrapRef = useRef(null);
   const fileInputRef = useRef(null);
   const langWrapRef = useRef(null);
+  const templatesWrapRef = useRef(null);
   const toast = useToast();
 
   const { data: qrData } = useQuickReplies(channelType);
   const quickReplies = qrData?.quick_replies || [];
+  const createTemplate = useCreateQuickReply();
+  const updateTemplate = useUpdateQuickReply();
+  const deleteTemplateMut = useDeleteQuickReply();
+  const useTemplateMut = useUseQuickReply();
+
+  // Vervang variabelen ({naam}, {bedrijf}) op basis van het contact.
+  const applyVars = (raw) => {
+    let t = raw || '';
+    if (contactName) t = t.replace(/\{naam\}/gi, contactName.split(' ')[0]);
+    if (contactCompany) t = t.replace(/\{bedrijf\}/gi, contactCompany);
+    return t;
+  };
+
+  const filteredTemplates = quickReplies.filter((t) => {
+    if (!templateSearch) return true;
+    const q = templateSearch.toLowerCase();
+    return t.title?.toLowerCase().includes(q) || t.body?.toLowerCase().includes(q);
+  });
+
+  const applyTemplate = (t) => {
+    setTextWithFocus(applyVars(t.body));
+    useTemplateMut.mutate({ id: t.id });
+    setShowTemplates(false);
+    setTemplateSearch('');
+    toast.success(`Template "${t.title}" toegepast`);
+  };
+
+  const removeTemplate = (id) => {
+    if (!confirm('Template verwijderen?')) return;
+    deleteTemplateMut.mutate({ id }, {
+      onSuccess: () => toast.success('Template verwijderd'),
+      onError: (e) => toast.error(e.message || 'Verwijderen mislukt'),
+    });
+  };
+
+  const saveTemplate = async (data) => {
+    try {
+      if (editingTemplate) {
+        await updateTemplate.mutateAsync({ id: editingTemplate.id, ...data });
+        toast.success('Template opgeslagen');
+      } else {
+        await createTemplate.mutateAsync(data);
+        toast.success('Template aangemaakt');
+      }
+      setShowTemplateEditor(false);
+      setEditingTemplate(null);
+    } catch (e) {
+      toast.error(e.message || 'Opslaan mislukt');
+    }
+  };
 
   useEffect(() => {
     setText('');
@@ -153,6 +209,22 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [showLangPicker]);
 
+  useEffect(() => {
+    if (!showTemplates) return undefined;
+    function onDocDown(e) {
+      if (templatesWrapRef.current && !templatesWrapRef.current.contains(e.target)) {
+        setShowTemplates(false);
+      }
+    }
+    function onKey(e) { if (e.key === 'Escape') setShowTemplates(false); }
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showTemplates]);
+
   const insertEmoji = (emoji) => {
     const native = emoji?.native || '';
     if (!native) return;
@@ -182,11 +254,13 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
 
   const insertTemplate = (qr) => {
     if (!trigger) return;
-    const next = text.slice(0, trigger.start) + qr.body + text.slice(trigger.end);
+    const bodyWithVars = applyVars(qr.body);
+    const next = text.slice(0, trigger.start) + bodyWithVars + text.slice(trigger.end);
     setText(next);
+    useTemplateMut.mutate({ id: qr.id });
     requestAnimationFrame(() => {
       if (ref.current) {
-        const pos = trigger.start + qr.body.length;
+        const pos = trigger.start + bodyWithVars.length;
         ref.current.focus();
         ref.current.setSelectionRange(pos, pos);
         setCaret(pos);
@@ -603,6 +677,84 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
           )}
         </button>
 
+        <div className="relative" ref={templatesWrapRef}>
+          <button
+            onClick={() => setShowTemplates((v) => !v)}
+            disabled={sending}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+              showTemplates
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+            }`}
+            title="Templates"
+          >
+            <i className="fa-solid fa-file-lines mr-1.5" />Templates
+          </button>
+
+          {showTemplates ? (
+            <div className="absolute bottom-full right-0 z-50 mb-2 flex max-h-96 w-96 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <i className="fa-solid fa-file-lines text-gray-500" />
+                  <span className="font-semibold text-gray-900">Templates</span>
+                </div>
+                <button
+                  onClick={() => { setEditingTemplate(null); setShowTemplateEditor(true); }}
+                  className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+                >
+                  <i className="fa-solid fa-plus mr-1" />Nieuw
+                </button>
+              </div>
+
+              <div className="border-b border-gray-100 p-2">
+                <input
+                  type="text"
+                  value={templateSearch}
+                  onChange={(e) => setTemplateSearch(e.target.value)}
+                  placeholder="Zoek template…"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-1 scrollbar-thin">
+                {filteredTemplates.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-gray-400">
+                    Geen templates. Klik &ldquo;Nieuw&rdquo; om er een te maken.
+                  </div>
+                ) : filteredTemplates.map((t) => (
+                  <div key={t.id} className="group flex items-start gap-2 rounded-lg p-2 hover:bg-gray-50">
+                    <button onClick={() => applyTemplate(t)} className="min-w-0 flex-1 text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium text-gray-900">{t.title}</span>
+                        {t.shortcut ? (
+                          <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-600">{t.shortcut}</span>
+                        ) : null}
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{(t.body || '').slice(0, 100)}</p>
+                    </button>
+                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        onClick={() => { setEditingTemplate(t); setShowTemplateEditor(true); }}
+                        className="p-1 text-gray-400 hover:text-blue-600"
+                        title="Bewerken"
+                      >
+                        <i className="fa-solid fa-pen text-xs" />
+                      </button>
+                      <button
+                        onClick={() => removeTemplate(t.id)}
+                        className="p-1 text-gray-400 hover:text-red-600"
+                        title="Verwijderen"
+                      >
+                        <i className="fa-solid fa-trash text-xs" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         {supportsMedia || isEmail ? (
           <>
             <input
@@ -664,6 +816,15 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
           <span className="ml-auto text-xs text-gray-400">{text.trim().length} tekens</span>
         ) : null}
       </div>
+
+      {showTemplateEditor ? (
+        <TemplateEditorModal
+          template={editingTemplate}
+          channelType={channelType}
+          onSave={saveTemplate}
+          onClose={() => { setShowTemplateEditor(false); setEditingTemplate(null); }}
+        />
+      ) : null}
     </div>
   );
 }
