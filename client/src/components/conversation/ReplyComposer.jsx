@@ -53,6 +53,9 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
   const [activeTemplateHtml, setActiveTemplateHtml] = useState(null);
   const [appliedSnapshot, setAppliedSnapshot] = useState(null);
   const [activeTemplateAtts, setActiveTemplateAtts] = useState([]);
+  // Toont een "nog even geduld"-hint als het versturen ongewoon lang duurt (>10s),
+  // zodat het niet lijkt alsof de UI vastloopt.
+  const [longSending, setLongSending] = useState(false);
   const ref = useRef(null);
   const emojiWrapRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -175,6 +178,12 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
     setAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
     setAttachError(null);
   }
+
+  useEffect(() => {
+    if (!sending) { setLongSending(false); return undefined; }
+    const t = setTimeout(() => setLongSending(true), 10000);
+    return () => clearTimeout(t);
+  }, [sending]);
 
   useEffect(() => {
     function onFocusEvent() {
@@ -622,6 +631,7 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
             <span className="inline-flex items-center gap-2">
               <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
               Verzenden…
+              {longSending ? <span className="text-xs font-normal text-white/80">(nog even geduld)</span> : null}
             </span>
           ) : (
             <><i className="fa-solid fa-paper-plane mr-1.5" />Verstuur</>

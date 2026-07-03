@@ -13,6 +13,10 @@ function baseUrl() {
   return dsn.replace(/\/$/, '');
 }
 
+// Unipile's API is af en toe traag; zonder timeout blijft een send-call eeuwig hangen
+// en de frontend eindeloos in "Verzenden…". 20s dekt normale calls ruim.
+const UNIPILE_TIMEOUT_MS = 20000;
+
 async function callUnipile(method, path, { query, body } = {}) {
   const { apiKey, dsn } = getUnipileCreds();
   if (!apiKey || !dsn) throw new Error('Unipile niet geconfigureerd');
@@ -28,7 +32,9 @@ async function callUnipile(method, path, { query, body } = {}) {
     'X-API-KEY': apiKey,
     'Accept': 'application/json',
   };
-  const init = { method, headers };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UNIPILE_TIMEOUT_MS);
+  const init = { method, headers, signal: controller.signal };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -38,7 +44,10 @@ async function callUnipile(method, path, { query, body } = {}) {
   try {
     resp = await fetch(url, init);
   } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`Unipile timeout (${UNIPILE_TIMEOUT_MS / 1000}s) — probeer opnieuw`);
     throw new Error(`Kan Unipile niet bereiken: ${e.message}`);
+  } finally {
+    clearTimeout(timeout);
   }
 
   const text = await resp.text();
@@ -206,15 +215,22 @@ export async function sendMessageWithAttachments(chatId, text, files) {
     form.append('attachments', blob, f.filename || 'bestand');
   }
 
+  // Media-uploads mogen langer duren dan tekst — ruimere timeout (40s).
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 40000);
   let resp;
   try {
     resp = await fetch(url, {
       method: 'POST',
       headers: { 'X-API-KEY': apiKey, 'Accept': 'application/json' },
       body: form,
+      signal: controller.signal,
     });
   } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Unipile timeout (40s) — probeer opnieuw');
     throw new Error(`Kan Unipile niet bereiken: ${e.message}`);
+  } finally {
+    clearTimeout(timeout);
   }
 
   const txt = await resp.text();
