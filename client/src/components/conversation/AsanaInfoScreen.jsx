@@ -1,5 +1,5 @@
-// Info-scherm voor een Asana-taak: toont eerst alle klantinfo + wat er moet gebeuren,
-// en pas na een kanaalkeuze opent het typ-scherm (het echte gesprek met de klant).
+// Info-scherm voor een Asana-taak: compacte klantinfo (uit de custom fields + de geparste
+// "Customer details") bovenaan; pas na een kanaalkeuze opent het typ-scherm.
 
 function formatValue(value) {
   const s = String(value);
@@ -10,11 +10,11 @@ function formatValue(value) {
   return s;
 }
 
-function Field({ label, value, mono, span }) {
+function OrderField({ label, value }) {
   return (
-    <div className={span === 2 ? 'col-span-2' : ''}>
+    <div>
       <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</p>
-      <p className={`mt-0.5 text-sm font-medium text-gray-900 ${mono ? 'font-mono' : ''}`}>{value}</p>
+      <p className="mt-0.5 text-sm font-medium text-gray-900">{value}</p>
     </div>
   );
 }
@@ -24,18 +24,23 @@ export default function AsanaInfoScreen({ message, onStartCompose, onBack }) {
   let cf = {};
   try { cf = m.asana_custom_fields ? JSON.parse(m.asana_custom_fields) : {}; } catch { cf = {}; }
 
-  const customerName = cf['Account name'] || cf['Customer'] || cf['Klant'] || cf['Company'] || null;
+  const parsedName = `${cf.Firstname || ''} ${cf.Lastname || ''}`.trim();
+  const customerName = cf['Account name'] || cf['Customer'] || cf['Klant'] || cf['Company'] || parsedName || null;
   const country = cf['Country'];
   const status = cf['Account Status'];
-  const lastOrder = cf['Last Order Date'] || cf['Last Order'];
-  const customerSince = cf['Customer since'];
-  const contact = cf['Contact'];
-  const totalOrders = cf['Total Orders'];
-  const avgOrderValue = cf['Average order value'];
-  const lastTwoOrders = cf['Last two order amounts'];
-  const accountId = cf['Account ID'];
   const isActive = status && /actief|active/i.test(status);
+  const email = cf.Email || m.asana_contact_email;
+  const phone = cf.Tel || cf.Phone || m.asana_contact_phone;
+  const magentoUrl = cf['Magento URL'];
+  const recentOrders = Array.isArray(cf['Recent orders']) ? cf['Recent orders'] : null;
   const asanaUrl = m.deep_link || `https://app.asana.com/0/0/${m.external_id}`;
+
+  const orderFields = [
+    { label: 'Klant sinds', value: cf['Customer since'] },
+    { label: 'Laatste bestelling', value: cf['Last order date'] || cf['Last Order Date'] },
+    { label: 'Totaal bestellingen', value: cf['Order count'] || cf['Total Orders'] },
+    { label: 'Gem. bestelwaarde', value: cf['Average order value'] ? `€${cf['Average order value']}` : null },
+  ].filter((f) => f.value).map((f) => ({ ...f, value: formatValue(f.value) }));
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
@@ -58,13 +63,13 @@ export default function AsanaInfoScreen({ message, onStartCompose, onBack }) {
 
         {customerName ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-5">
-            <div className="mb-4 flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-purple-100 to-blue-100 text-lg font-bold text-purple-700">
+            <div className="mb-5 flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-100 to-blue-100 text-lg font-bold text-purple-700">
                 {customerName.slice(0, 2).toUpperCase()}
               </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">{customerName}</h2>
-                <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-xl font-semibold text-gray-900">{customerName}</h2>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
                   {country ? <span className="flex items-center gap-1"><i className="fa-solid fa-globe" />{country}</span> : null}
                   {status ? (
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -73,47 +78,53 @@ export default function AsanaInfoScreen({ message, onStartCompose, onBack }) {
                   ) : null}
                 </div>
               </div>
+              {magentoUrl ? (
+                <a href={magentoUrl} target="_blank" rel="noopener noreferrer" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 transition-colors hover:bg-gray-50">
+                  <i className="fa-solid fa-arrow-up-right-from-square" /> Open in Magento
+                </a>
+              ) : null}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4">
-              {customerSince ? <Field label="Klant sinds" value={formatValue(customerSince)} /> : null}
-              {lastOrder ? <Field label="Laatste bestelling" value={formatValue(lastOrder)} /> : null}
-              {totalOrders ? <Field label="Totaal bestellingen" value={formatValue(totalOrders)} /> : null}
-              {avgOrderValue ? <Field label="Gem. bestelwaarde" value={`€${formatValue(avgOrderValue)}`} /> : null}
-              {lastTwoOrders ? <Field label="Laatste 2 orders" value={formatValue(lastTwoOrders)} span={2} /> : null}
-              {contact ? <Field label="Contact" value={formatValue(contact)} span={2} /> : null}
-              {accountId ? <Field label="Account ID" value={formatValue(accountId)} mono /> : null}
-            </div>
-          </div>
-        ) : null}
-
-        {m.body_text ? (
-          <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <i className="fa-solid fa-bullhorn text-orange-600" />
-              <h3 className="font-semibold text-orange-900">Wat moet er gebeuren</h3>
-            </div>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{m.body_text}</p>
-          </div>
-        ) : null}
-
-        {m.asana_contact_email || m.asana_contact_phone ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-5">
-            <h3 className="mb-3 font-semibold text-gray-900">Contactgegevens</h3>
-            <div className="space-y-2">
-              {m.asana_contact_email ? (
-                <div className="flex items-center gap-3 text-sm">
-                  <i className="fa-solid fa-envelope w-4 text-gray-400" />
-                  <span className="text-gray-700">{m.asana_contact_email}</span>
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              {email ? (
+                <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Email</p>
+                  <a href={`mailto:${email}`} className="mt-0.5 block truncate text-sm font-medium text-gray-900 hover:text-blue-600">{email}</a>
                 </div>
               ) : null}
-              {m.asana_contact_phone ? (
-                <div className="flex items-center gap-3 text-sm">
-                  <i className="fa-solid fa-phone w-4 text-gray-400" />
-                  <span className="text-gray-700">{m.asana_contact_phone}</span>
+              {phone ? (
+                <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Telefoon</p>
+                  <a href={`tel:${phone}`} className="mt-0.5 block text-sm font-medium text-gray-900 hover:text-blue-600">{phone}</a>
                 </div>
               ) : null}
             </div>
+
+            {orderFields.length ? (
+              <div className="border-t border-gray-100 pt-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Bestelhistorie</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {orderFields.map((f) => <OrderField key={f.label} label={f.label} value={f.value} />)}
+                </div>
+              </div>
+            ) : null}
+
+            {recentOrders && recentOrders.length ? (
+              <div className="mt-4 border-t border-gray-100 pt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Laatste bestellingen</p>
+                <div className="space-y-1">
+                  {recentOrders.map((order, i) => {
+                    const [date, amount] = order.split('|').map((s) => s.trim());
+                    return (
+                      <div key={i} className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-1.5 text-sm">
+                        <span className="text-gray-700">{date}</span>
+                        {amount ? <span className="font-medium text-gray-900">€{amount}</span> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -122,39 +133,39 @@ export default function AsanaInfoScreen({ message, onStartCompose, onBack }) {
           <p className="mb-4 text-xs text-gray-500">Bij versturen wordt de Asana taak automatisch afgevinkt.</p>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {m.asana_contact_email ? (
+            {email ? (
               <button onClick={() => onStartCompose('email')} className="group flex items-center justify-between rounded-xl bg-red-600 p-4 text-white transition-colors hover:bg-red-700">
                 <span className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20"><i className="fa-solid fa-envelope text-lg" /></span>
                   <span className="text-left">
                     <span className="block font-semibold">Stuur Email</span>
-                    <span className="block text-xs opacity-75">{m.asana_contact_email}</span>
+                    <span className="block text-xs opacity-75">{email}</span>
                   </span>
                 </span>
                 <i className="fa-solid fa-arrow-right opacity-0 transition-opacity group-hover:opacity-100" />
               </button>
             ) : null}
 
-            {m.asana_contact_phone ? (
+            {phone ? (
               <button onClick={() => onStartCompose('whatsapp')} className="group flex items-center justify-between rounded-xl bg-green-600 p-4 text-white transition-colors hover:bg-green-700">
                 <span className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20"><i className="fa-brands fa-whatsapp text-lg" /></span>
                   <span className="text-left">
                     <span className="block font-semibold">Stuur WhatsApp</span>
-                    <span className="block text-xs opacity-75">{m.asana_contact_phone}</span>
+                    <span className="block text-xs opacity-75">{phone}</span>
                   </span>
                 </span>
                 <i className="fa-solid fa-arrow-right opacity-0 transition-opacity group-hover:opacity-100" />
               </button>
             ) : null}
 
-            {m.asana_contact_phone ? (
-              <a href={`tel:${m.asana_contact_phone}`} className="group flex items-center justify-between rounded-xl bg-blue-600 p-4 text-white transition-colors hover:bg-blue-700">
+            {phone ? (
+              <a href={`tel:${phone}`} className="group flex items-center justify-between rounded-xl bg-blue-600 p-4 text-white transition-colors hover:bg-blue-700">
                 <span className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20"><i className="fa-solid fa-phone text-lg" /></span>
                   <span className="text-left">
                     <span className="block font-semibold">Bel direct</span>
-                    <span className="block text-xs opacity-75">{m.asana_contact_phone}</span>
+                    <span className="block text-xs opacity-75">{phone}</span>
                   </span>
                 </span>
                 <i className="fa-solid fa-arrow-right opacity-0 transition-opacity group-hover:opacity-100" />

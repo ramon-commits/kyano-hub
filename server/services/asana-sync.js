@@ -22,6 +22,61 @@ function customFieldsDict(task) {
   return out;
 }
 
+// Parse de "Customer details:"-sectie uit de taakbeschrijving (Firstname, Email, Tel,
+// Order count, Last order date, Last N orders) + de Magento-URL. Deze horen bovenaan in
+// het klantblok, niet in het lange "wat moet er gebeuren"-blok.
+function parseCustomerDetails(notes) {
+  const details = {};
+  if (!notes) return details;
+
+  const match = notes.match(/Customer details:\s*([\s\S]*?)(?:\n\s*\n|$)/i);
+  if (match) {
+    for (const line of match[1].split('\n')) {
+      const kv = line.match(/^\s*([^:]+):\s*(.+)$/);
+      if (kv) {
+        const key = kv[1].trim();
+        const value = kv[2].trim();
+        // "Last 3 orders" heeft geen waarde op dezelfde regel → overslaan (apart geparsed).
+        if (key && value && !/^Last\s+\d+\s+orders?$/i.test(key)) details[key] = value;
+      }
+    }
+  }
+
+  const ordersMatch = notes.match(/Last\s+\d+\s+orders?:\s*\n((?:\s*[-•]\s*.+\n?)+)/i);
+  if (ordersMatch) {
+    const orders = ordersMatch[1].split('\n').map((l) => l.replace(/^\s*[-•]\s*/, '').trim()).filter(Boolean);
+    if (orders.length) details['Recent orders'] = orders;
+  }
+
+  const magento = notes.match(/(https?:\/\/\S*lifeaidbevco\S*)/i);
+  if (magento) details['Magento URL'] = magento[1];
+
+  return details;
+}
+
+// Alle Asana custom fields + de uit de beschrijving geparste klantdetails samengevoegd.
+function buildFields(task) {
+  return { ...customFieldsDict(task), ...parseCustomerDetails(task.notes) };
+}
+
+// Strip de generieke boilerplate (Action required / Goal / Channel / Message guideline /
+// Important rules) én de al elders getoonde Customer details + Magento URL uit de notities.
+// Wat overblijft (meestal niets) wordt de body_text.
+function cleanNotes(notes) {
+  if (!notes) return null;
+  const cleaned = notes
+    .replace(/Action required:[\s\S]*?(?=\n\s*\n[A-Z]|$)/gi, '')
+    .replace(/Goal:[\s\S]*?(?=\n\s*\n[A-Z]|$)/gi, '')
+    .replace(/Channel:[\s\S]*?(?=\n\s*\n[A-Z]|$)/gi, '')
+    .replace(/Message guideline[^:]*:[\s\S]*?(?=\n\s*\n[A-Z]|$)/gi, '')
+    .replace(/Important rules:[\s\S]*?(?=\n\s*\n[A-Z]|$)/gi, '')
+    .replace(/Customer details:[\s\S]*?(?=\n\s*\n[A-Z]|$)/gi, '')
+    .replace(/Magento URL:.*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return cleaned || null;
+}
+
 // Map de Asana-assignee naar het juiste Comm Hub-afzenderkanaal.
 // (channel-id's geverifieerd tegen de channels-tabel — niet geraden.)
 //   Ramon → gmail-1 (ramon@lifeaidbevco.eu) / wa-2 (WhatsApp FitAid Business)
@@ -88,17 +143,19 @@ export async function syncAsana() {
        datetime('now'), datetime('now'), datetime('now'))
   `);
 
-  // Backfill/actueel houden: vult velden bij op bestaande rijen die ze nog missen
-  // (INSERT OR IGNORE raakt bestaande rijen niet). COALESCE = nooit overschrijven.
+  // Backfill/actueel houden: vult velden bij op bestaande rijen (INSERT OR IGNORE raakt
+  // bestaande rijen niet). Contactvelden = COALESCE (sticky); custom_fields + body_text
+  // worden overschreven met de verse, geparste data uit Asana.
   const updateContact = db.prepare(`
     UPDATE messages
     SET asana_contact_email = COALESCE(asana_contact_email, ?),
         asana_contact_phone = COALESCE(asana_contact_phone, ?),
         contact_id = COALESCE(contact_id, ?),
-        asana_custom_fields = COALESCE(asana_custom_fields, ?),
+        asana_custom_fields = ?,
         asana_assignee_email = COALESCE(asana_assignee_email, ?),
         asana_email_channel = COALESCE(asana_email_channel, ?),
-        asana_whatsapp_channel = COALESCE(asana_whatsapp_channel, ?)
+        asana_whatsapp_channel = COALESCE(asana_whatsapp_channel, ?),
+        body_text = ?
     WHERE channel_id = '${CHANNEL_ID}' AND external_id = ?
   `);
 
@@ -107,14 +164,15 @@ export async function syncAsana() {
     for (const t of mine) {
       const { email, phone, contactId } = extractContact(t);
       const assignee = t.assignee?.email || null;
-      const fieldsJson = JSON.stringify(customFieldsDict(t));
+      const fieldsJson = JSON.stringify(buildFields(t));
       const emailChannel = resolveChannel(assignee, 'email');
       const waChannel = resolveChannel(assignee, 'whatsapp');
       const notes = (t.notes || '').trim() || null;
+      const cleanedBody = cleanNotes(t.notes);
       const snippet = (notes ? notes.replace(/\s+/g, ' ') : t.name).slice(0, 180);
-      const r = insert.run(uuid(), t.gid, contactId, t.name || '(taak zonder titel)', snippet, notes, t.permalink_url || null, email, phone, fieldsJson, assignee, emailChannel, waChannel);
+      const r = insert.run(uuid(), t.gid, contactId, t.name || '(taak zonder titel)', snippet, cleanedBody, t.permalink_url || null, email, phone, fieldsJson, assignee, emailChannel, waChannel);
       if (r.changes) inserted++;
-      else updateContact.run(email, phone, contactId, fieldsJson, assignee, emailChannel, waChannel, t.gid);
+      else updateContact.run(email, phone, contactId, fieldsJson, assignee, emailChannel, waChannel, cleanedBody, t.gid);
     }
   });
   tx();
