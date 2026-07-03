@@ -42,6 +42,14 @@ function parseCustomerDetails(notes) {
     }
   }
 
+  // Bedrijfsnaam kan (voor toekomstige taken) als losse regel in de notities staan.
+  for (const key of ['Bedrijf', 'Company', 'Companyname', 'Business', 'Organization']) {
+    if (!details[key]) {
+      const mm = notes.match(new RegExp(`^${key}:\\s*(.+)$`, 'im'));
+      if (mm) details[key] = mm[1].trim();
+    }
+  }
+
   const ordersMatch = notes.match(/Last\s+\d+\s+orders?:\s*\n((?:\s*[-•]\s*.+\n?)+)/i);
   if (ordersMatch) {
     const orders = ordersMatch[1].split('\n').map((l) => l.replace(/^\s*[-•]\s*/, '').trim()).filter(Boolean);
@@ -54,9 +62,54 @@ function parseCustomerDetails(notes) {
   return details;
 }
 
-// Alle Asana custom fields + de uit de beschrijving geparste klantdetails samengevoegd.
+const COUNTRIES = {
+  NL: { code: 'NL', name: 'Nederland', flag: '🇳🇱' }, DE: { code: 'DE', name: 'Duitsland', flag: '🇩🇪' },
+  FR: { code: 'FR', name: 'Frankrijk', flag: '🇫🇷' }, BE: { code: 'BE', name: 'België', flag: '🇧🇪' },
+  IT: { code: 'IT', name: 'Italië', flag: '🇮🇹' }, ES: { code: 'ES', name: 'Spanje', flag: '🇪🇸' },
+  GB: { code: 'GB', name: 'UK', flag: '🇬🇧' }, AT: { code: 'AT', name: 'Oostenrijk', flag: '🇦🇹' },
+  CH: { code: 'CH', name: 'Zwitserland', flag: '🇨🇭' }, DK: { code: 'DK', name: 'Denemarken', flag: '🇩🇰' },
+  SE: { code: 'SE', name: 'Zweden', flag: '🇸🇪' }, NO: { code: 'NO', name: 'Noorwegen', flag: '🇳🇴' },
+  FI: { code: 'FI', name: 'Finland', flag: '🇫🇮' }, PL: { code: 'PL', name: 'Polen', flag: '🇵🇱' },
+  IE: { code: 'IE', name: 'Ierland', flag: '🇮🇪' }, PT: { code: 'PT', name: 'Portugal', flag: '🇵🇹' },
+  LU: { code: 'LU', name: 'Luxemburg', flag: '🇱🇺' },
+};
+const TLD_TO_CODE = {
+  '.de': 'DE', '.fr': 'FR', '.be': 'BE', '.it': 'IT', '.es': 'ES', '.at': 'AT', '.ch': 'CH',
+  '.dk': 'DK', '.se': 'SE', '.no': 'NO', '.fi': 'FI', '.pl': 'PL', '.ie': 'IE', '.pt': 'PT',
+  '.lu': 'LU', '.co.uk': 'GB', '.uk': 'GB', '.nl': 'NL',
+};
+
+// Land met vlag: eerst het Country-veld, anders afgeleid uit de email-TLD. null = onbekend.
+function detectCountry(email, countryField) {
+  const c = String(countryField || '').trim().toUpperCase();
+  if (COUNTRIES[c]) return COUNTRIES[c];
+  const domain = String(email || '').split('@')[1] || '';
+  for (const [tld, code] of Object.entries(TLD_TO_CODE)) {
+    if (domain.endsWith(tld)) return COUNTRIES[code];
+  }
+  return null;
+}
+
+// Type activiteit afgeleid uit de taaknaam → label + icoon + kleur (voor de badge).
+function detectTaskType(taskName) {
+  const n = String(taskName || '').toLowerCase();
+  if (/\bwhats ?app\b/.test(n)) return { label: 'WhatsApp', icon: 'fa-brands fa-whatsapp', color: 'green' };
+  if (/\b(call|bel|voice note|diagnosis)\b/.test(n)) return { label: 'Bellen', icon: 'fa-solid fa-phone', color: 'blue' };
+  if (/\b(e-?mail)\b/.test(n)) return { label: 'Email', icon: 'fa-solid fa-envelope', color: 'red' };
+  if (/check-?in/.test(n)) return { label: 'Check-in', icon: 'fa-solid fa-comment', color: 'purple' };
+  if (/welcome|welkom/.test(n)) return { label: 'Welkom', icon: 'fa-solid fa-hand', color: 'orange' };
+  if (/relationship|relatie/.test(n)) return { label: 'Relatie', icon: 'fa-solid fa-heart', color: 'pink' };
+  return { label: 'Contact', icon: 'fa-solid fa-comment-dots', color: 'gray' };
+}
+
+// Alle Asana custom fields + geparste klantdetails + afgeleide info (land, type, bedrijf).
 function buildFields(task) {
-  return { ...customFieldsDict(task), ...parseCustomerDetails(task.notes) };
+  const merged = { ...customFieldsDict(task), ...parseCustomerDetails(task.notes) };
+  const country = detectCountry(merged.Email, merged.Country);
+  if (country) merged._Country = country;
+  merged._TaskType = detectTaskType(task.name);
+  merged._CompanyName = merged.Bedrijf || merged.Company || merged.Companyname || merged['Account name'] || null;
+  return merged;
 }
 
 // Strip de generieke boilerplate (Action required / Goal / Channel / Message guideline /

@@ -10,6 +10,17 @@ function formatValue(value) {
   return s;
 }
 
+// Statische Tailwind-klassen per task-type kleur (dynamische `bg-${x}` sneuvelen in de build).
+const TASK_TYPE_COLORS = {
+  blue: 'bg-blue-50 text-blue-700',
+  green: 'bg-green-50 text-green-700',
+  red: 'bg-red-50 text-red-700',
+  purple: 'bg-purple-50 text-purple-700',
+  orange: 'bg-orange-50 text-orange-700',
+  pink: 'bg-pink-50 text-pink-700',
+  gray: 'bg-gray-100 text-gray-700',
+};
+
 function OrderField({ label, value }) {
   return (
     <div>
@@ -25,8 +36,12 @@ export default function AsanaInfoScreen({ message, onStartCompose, onBack, onDon
   try { cf = m.asana_custom_fields ? JSON.parse(m.asana_custom_fields) : {}; } catch { cf = {}; }
 
   const parsedName = `${cf.Firstname || ''} ${cf.Lastname || ''}`.trim();
-  const customerName = cf['Account name'] || cf['Customer'] || cf['Klant'] || cf['Company'] || parsedName || null;
-  const country = cf['Country'];
+  const companyName = cf._CompanyName || cf['Account name'] || cf.Company || cf.Bedrijf || null;
+  const customerName = companyName || parsedName || cf['Customer'] || cf['Klant'] || null;
+  // Persoon als subtitel — alleen als die afwijkt van de titel (voorkomt dubbele naam).
+  const subtitle = parsedName && parsedName !== customerName ? parsedName : null;
+  const country = cf._Country || (cf.Country ? { code: cf.Country, name: cf.Country, flag: '' } : null);
+  const taskType = cf._TaskType || null;
   const status = cf['Account Status'];
   const isActive = status && /actief|active/i.test(status);
   const email = cf.Email || m.asana_contact_email;
@@ -63,24 +78,37 @@ export default function AsanaInfoScreen({ message, onStartCompose, onBack, onDon
 
         {customerName ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-5">
-            <div className="mb-5 flex items-center gap-4">
+            <div className="mb-5 flex items-start gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-100 to-blue-100 text-lg font-bold text-purple-700">
-                {customerName.slice(0, 2).toUpperCase()}
+                {(customerName || '?').slice(0, 2).toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-xl font-semibold text-gray-900">{customerName}</h2>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                  {country ? <span className="flex items-center gap-1"><i className="fa-solid fa-globe" />{country}</span> : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="truncate text-xl font-semibold text-gray-900">{customerName || 'Onbekende klant'}</h2>
+                  {country ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs">
+                      {country.flag ? <span className="text-base leading-none">{country.flag}</span> : null}
+                      <span className="font-medium text-gray-700">{country.code}</span>
+                    </span>
+                  ) : null}
+                </div>
+                {subtitle ? <p className="mt-0.5 text-sm text-gray-600">{subtitle}</p> : null}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   {status ? (
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {status}
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />{status}
+                    </span>
+                  ) : null}
+                  {taskType ? (
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${TASK_TYPE_COLORS[taskType.color] || TASK_TYPE_COLORS.gray}`}>
+                      <i className={`${taskType.icon} text-[10px]`} />{taskType.label}
                     </span>
                   ) : null}
                 </div>
               </div>
               {magentoUrl ? (
                 <a href={magentoUrl} target="_blank" rel="noopener noreferrer" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 transition-colors hover:bg-gray-50">
-                  <i className="fa-solid fa-arrow-up-right-from-square" /> Open in Magento
+                  <i className="fa-solid fa-arrow-up-right-from-square" /> Magento
                 </a>
               ) : null}
             </div>
