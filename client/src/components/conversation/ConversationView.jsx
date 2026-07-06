@@ -148,8 +148,8 @@ export default function ConversationView({
       } else {
         toast.success(`Verzonden via ${result.from || m.channel_account || m.channel_label}`, 'Verstuurd');
       }
-      // Nieuw gesprek (placeholder): eerste bericht is verstuurd → door naar het volgende.
-      if (m.is_placeholder && onAdvance) onAdvance(messageId);
+      // Na versturen blijft Ramon in de thread — géén advance naar het volgende bericht.
+      // Advance gebeurt alleen bij Afgehandeld/Snooze/Archiveer/Spam, niet bij verstuur.
       return true;
     } catch (e) {
       if (e.status === 401 || e.data?.needs_reconnect) {
