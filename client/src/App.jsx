@@ -1,19 +1,24 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Sidebar from './components/layout/Sidebar.jsx';
 import InboxView from './components/inbox/InboxView.jsx';
-import SnoozedView from './components/snoozed/SnoozedView.jsx';
-import LogboekView from './components/logboek/LogboekView.jsx';
-import ContactenView from './components/contacts/ContactenView.jsx';
-import VerjaardagenView from './components/birthdays/VerjaardagenView.jsx';
-import NudgesView from './components/nudges/NudgesView.jsx';
-import CalendarView from './components/calendar/CalendarView.jsx';
-import SocialPlannerView from './components/social/SocialPlannerView.jsx';
-import ProjectenView from './components/projects/ProjectenView.jsx';
-import InstellingenView from './components/settings/InstellingenView.jsx';
-import PlaceholderView from './components/views/PlaceholderView.jsx';
 import ConversationView from './components/conversation/ConversationView.jsx';
-import ContactDetail from './components/contacts/ContactDetail.jsx';
+import LoadingSpinner from './components/shared/LoadingSpinner.jsx';
+
+// Code-splitting: de zwaardere/zelden-eerst-gebruikte views uit de main bundle halen.
+// Contacten en Nudges kunnen 5000+ items renderen — die code hoort niet in de kritieke
+// eerste-load. Inbox + Conversation blijven eager (dat is het hoofdscherm).
+const SnoozedView = lazy(() => import('./components/snoozed/SnoozedView.jsx'));
+const LogboekView = lazy(() => import('./components/logboek/LogboekView.jsx'));
+const ContactenView = lazy(() => import('./components/contacts/ContactenView.jsx'));
+const VerjaardagenView = lazy(() => import('./components/birthdays/VerjaardagenView.jsx'));
+const NudgesView = lazy(() => import('./components/nudges/NudgesView.jsx'));
+const CalendarView = lazy(() => import('./components/calendar/CalendarView.jsx'));
+const SocialPlannerView = lazy(() => import('./components/social/SocialPlannerView.jsx'));
+const ProjectenView = lazy(() => import('./components/projects/ProjectenView.jsx'));
+const InstellingenView = lazy(() => import('./components/settings/InstellingenView.jsx'));
+const PlaceholderView = lazy(() => import('./components/views/PlaceholderView.jsx'));
+const ContactDetail = lazy(() => import('./components/contacts/ContactDetail.jsx'));
 import WelcomeScreen from './components/welcome/WelcomeScreen.jsx';
 import SnoozeModal from './components/modals/SnoozeModal.jsx';
 import ScheduleModal from './components/modals/ScheduleModal.jsx';
@@ -673,16 +678,22 @@ export default function App() {
           </header>
         ) : null}
 
-        <section className="flex-1 overflow-hidden">{renderMain()}</section>
+        <section className="flex-1 overflow-hidden">
+          <Suspense fallback={<div className="grid h-full place-items-center"><LoadingSpinner label="Laden…" /></div>}>
+            {renderMain()}
+          </Suspense>
+        </section>
       </main>
 
       {selectedContactId ? (
-        <ContactDetail
-          contactId={selectedContactId}
-          onClose={closeContact}
-          onOpenMessage={(m) => { setSelectedContactId(null); setSelectedMessageId(m.id); }}
-          onSchedule={(c) => handleSchedule(c)}
-        />
+        <Suspense fallback={null}>
+          <ContactDetail
+            contactId={selectedContactId}
+            onClose={closeContact}
+            onOpenMessage={(m) => { setSelectedContactId(null); setSelectedMessageId(m.id); }}
+            onSchedule={(c) => handleSchedule(c)}
+          />
+        </Suspense>
       ) : null}
 
       <SnoozeModal

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Picker from '@emoji-mart/react';
-import emojiData from '@emoji-mart/data';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuickReplies, useCreateQuickReply, useUpdateQuickReply, useDeleteQuickReply, useUseQuickReply } from '../../hooks/useQuickReplies.js';
 import { useToast } from '../../hooks/useToast.jsx';
 import { api } from '../../lib/api.js';
 import TemplateEditorModal from './TemplateEditorModal.jsx';
+
+// Emoji-picker lazy: laadt de zware emoji-dataset pas bij openen (niet in de main bundle).
+const EmojiPicker = lazy(() => import('./EmojiPicker.jsx'));
 
 // Detect a /shortcut at the current cursor: must be at start, or preceded by whitespace.
 function findTriggerAt(text, caret) {
@@ -874,16 +875,9 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
           </button>
           {showEmoji ? (
             <div className="absolute bottom-full right-0 z-30 mb-2 origin-bottom-right">
-              <Picker
-                data={emojiData}
-                onEmojiSelect={insertEmoji}
-                theme="light"
-                locale="nl"
-                previewPosition="none"
-                skinTonePosition="none"
-                navPosition="top"
-                autoFocus
-              />
+              <Suspense fallback={<div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-xs text-gray-400 shadow-lg">Emoji's laden…</div>}>
+                <EmojiPicker onEmojiSelect={insertEmoji} />
+              </Suspense>
             </div>
           ) : null}
         </div>
