@@ -43,6 +43,11 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
   const [loadingAction, setLoadingAction] = useState(null);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [variants, setVariants] = useState(null);
+  // Synchrone re-entrancy-guard: de `sending`-prop komt uit react-query (isPending) en
+  // wordt pas ná een re-render true. Twee snelle triggers (Cmd+Enter + klik, of een
+  // dubbele tap op WhatsApp) zien beide `sending === false` en versturen dan dubbel.
+  // Deze ref flipt direct in dezelfde tick en blokkeert de tweede aanroep gegarandeerd.
+  const sendingRef = useRef(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
@@ -300,38 +305,45 @@ export default function ReplyComposer({ messageId, channelType, defaultAccount, 
   };
 
   const handleSend = async () => {
-    if (sending) return;
-    if (attachedFiles.length > 0) {
-      if (!onSendMedia) return;
-      const ok = await onSendMedia({ text, files: attachedFiles, cc, bcc });
+    // Dubbele guard: async prop (`sending`) én synchrone ref. De ref blokkeert de
+    // tweede aanroep binnen dezelfde tick, vóór react-query `isPending` true wordt.
+    if (sending || sendingRef.current) return;
+    sendingRef.current = true;
+    try {
+      if (attachedFiles.length > 0) {
+        if (!onSendMedia) return;
+        const ok = await onSendMedia({ text, files: attachedFiles, cc, bcc });
+        if (ok) {
+          setText('');
+          setCc('');
+          setBcc('');
+          setAttachedFiles([]);
+          setAttachError(null);
+        }
+        return;
+      }
+      if (!text.trim()) return;
+      // Rich HTML alleen meesturen als de tekst niet handmatig is aangepast na toepassen
+      // van de template (anders is de HTML stale → val terug op platte tekst).
+      const unedited = activeTemplateHtml && text === appliedSnapshot;
+      const ok = await onSend?.({
+        text,
+        cc,
+        bcc,
+        html: unedited ? activeTemplateHtml : null,
+        templateId: activeTemplateId || null,
+      });
       if (ok) {
         setText('');
         setCc('');
         setBcc('');
-        setAttachedFiles([]);
-        setAttachError(null);
+        setActiveTemplateId(null);
+        setActiveTemplateHtml(null);
+        setAppliedSnapshot(null);
+        setActiveTemplateAtts([]);
       }
-      return;
-    }
-    if (!text.trim()) return;
-    // Rich HTML alleen meesturen als de tekst niet handmatig is aangepast na toepassen
-    // van de template (anders is de HTML stale → val terug op platte tekst).
-    const unedited = activeTemplateHtml && text === appliedSnapshot;
-    const ok = await onSend?.({
-      text,
-      cc,
-      bcc,
-      html: unedited ? activeTemplateHtml : null,
-      templateId: activeTemplateId || null,
-    });
-    if (ok) {
-      setText('');
-      setCc('');
-      setBcc('');
-      setActiveTemplateId(null);
-      setActiveTemplateHtml(null);
-      setAppliedSnapshot(null);
-      setActiveTemplateAtts([]);
+    } finally {
+      sendingRef.current = false;
     }
   };
 
