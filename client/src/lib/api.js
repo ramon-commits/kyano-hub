@@ -1,10 +1,39 @@
+// Request-throttle: nooit meer dan MAX_CONCURRENT fetches tegelijk. De browser staat
+// per origin maar ~6 HTTP/1.1-verbindingen toe; als die vollopen (bijv. door trage/hangende
+// server-calls) krijgt de SSE-stream geen slot meer en bevriest de UI. Door zelf op 5 te
+// cappen houden we altijd ruimte voor de EventSource-verbinding.
+const MAX_CONCURRENT = 5;
+let activeRequests = 0;
+const queue = [];
+
+function processQueue() {
+  while (activeRequests < MAX_CONCURRENT && queue.length > 0) {
+    const { url, opts, resolve, reject } = queue.shift();
+    activeRequests++;
+    fetch(url, opts)
+      .then(resolve, reject)
+      .finally(() => {
+        activeRequests--;
+        processQueue();
+      });
+  }
+}
+
+function throttledFetch(url, opts) {
+  return new Promise((resolve, reject) => {
+    queue.push({ url, opts, resolve, reject });
+    processQueue();
+  });
+}
+
 // Fetch met harde timeout — voorkomt dat een hangende server de UI eeuwig in
 // "Verzenden…" laat staan. Bij overschrijding krijgt de caller een nette fout.
+// Loopt via de throttle zodat de SSE-verbinding nooit door request-storms verhongert.
 async function fetchWithTimeout(url, options = {}, timeoutMs = 35000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    return await throttledFetch(url, { ...options, signal: controller.signal });
   } catch (e) {
     if (e.name === 'AbortError') {
       const err = new Error('Server reageert niet (timeout) — probeer opnieuw');

@@ -102,10 +102,25 @@ export async function getChatAttendees(chatId) {
 }
 
 // ===== Mark chat as read =====
-// Best-effort: probeer 3 endpoint-varianten in volgorde. Gooit nooit een fout.
+// Best-effort: probeer endpoint-varianten in volgorde. Gooit nooit een fout.
 // Bij elke shape: 4xx (behalve 404/405) = stop met retry (echte fout); 404/405 = probeer volgende.
+//
+// Faal-cache: als geen enkel endpoint werkt voor een chat, onthouden we dat 24u zodat we
+// Unipile niet bij élke heropening opnieuw met (falende) requests bestoken. Dit was de oorzaak
+// van server-overload: 4 mislukte requests × elke geopende chat.
+const failedMarkReadChats = new Map(); // chatId -> timestamp van laatste mislukking
+const MARK_READ_FAIL_TTL = 86400000;   // 24u
+const MARK_READ_ATTEMPT_TIMEOUT = 5000; // 5s per poging — voorkomt hangende fetches die opstapelen
+
 export async function markChatAsRead(chatId) {
   if (!chatId || !isConfigured()) return { ok: false, reason: 'not_configured_or_no_chat' };
+
+  // Recent gefaald? Skip — niet opnieuw spammen.
+  const lastFailed = failedMarkReadChats.get(chatId);
+  if (lastFailed && (Date.now() - lastFailed) < MARK_READ_FAIL_TTL) {
+    return { ok: false, cached: true, reason: 'recently_failed' };
+  }
+
   const { apiKey } = getUnipileCreds();
   const baseHeaders = { 'X-API-KEY': apiKey, 'Accept': 'application/json' };
   const jsonHeaders = { ...baseHeaders, 'Content-Type': 'application/json' };
@@ -141,27 +156,43 @@ export async function markChatAsRead(chatId) {
   ];
 
   for (const a of attempts) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), MARK_READ_ATTEMPT_TIMEOUT);
     try {
       const r = await fetch(new URL(baseUrl() + a.path), {
         method: a.method,
         headers: a.headers,
         body: a.body,
+        signal: controller.signal,
       });
-      console.log(`[MARK-READ] chat=${chatId} ${a.label}: status=${r.status} ok=${r.ok}`);
       if (r.ok) return { ok: true, via: a.label, status: r.status };
       // Definitieve fout (auth/permissions) → stop met retries, het fixt zich niet door een ander endpoint
       if (r.status === 401 || r.status === 403) {
+        failedMarkReadChats.set(chatId, Date.now());
+        console.log(`[MARK-READ] chat=${chatId}: auth fout ${r.status} (${a.label})`);
         return { ok: false, status: r.status, via: a.label };
       }
       // 404/405/422 etc → probeer de volgende shape
-    } catch (e) {
-      console.log(`[MARK-READ] chat=${chatId} ${a.label}: fetch fail ${e.message}`);
+    } catch {
+      // timeout/netwerkfout → probeer de volgende shape
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  console.log(`[MARK-READ] chat=${chatId}: geen endpoint werkte (${attempts.length} varianten geprobeerd)`);
+  // Alles gefaald → cache zodat we deze chat 24u niet opnieuw proberen.
+  failedMarkReadChats.set(chatId, Date.now());
+  console.log(`[MARK-READ] chat=${chatId}: geen endpoint werkte (${attempts.length} varianten) — 24u gecachet`);
   return { ok: false, reason: 'no_endpoint_worked' };
 }
+
+// Ruim verlopen faal-cache entries op zodat de Map niet oneindig groeit.
+setInterval(() => {
+  const cutoff = Date.now() - MARK_READ_FAIL_TTL;
+  for (const [id, ts] of failedMarkReadChats.entries()) {
+    if (ts < cutoff) failedMarkReadChats.delete(id);
+  }
+}, 3600000).unref?.();
 
 // ===== Archive/mute chat =====
 // Best-effort: probeer eerst archive, dan mute. Beide via PATCH op de chat-resource.
