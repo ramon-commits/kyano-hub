@@ -46,11 +46,21 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 35000) {
   }
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, { nullOn404 = false } = {}) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body !== undefined) opts.body = JSON.stringify(body);
 
   const res = await fetchWithTimeout(`/api${path}`, opts);
+
+  // Een GET op een resource die niet (meer) bestaat: geef null terug i.p.v. gooien.
+  // Zo ziet react-query géén error → geen retry-storm op verwijderde berichten. Die
+  // storm slokt anders de (max 5) request-slots op en laat de SSE-stream verhongeren,
+  // wat de UI doet bevriezen. De caller (component) toont een nette lege staat op null.
+  if (res.status === 404 && nullOn404) {
+    console.warn(`[API] 404 op ${path} — resource bestaat niet meer, return null`);
+    return null;
+  }
+
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
@@ -83,7 +93,7 @@ async function requestForm(method, path, formData) {
 }
 
 export const api = {
-  get: (path) => request('GET', path),
+  get: (path) => request('GET', path, undefined, { nullOn404: true }),
   post: (path, body) => request('POST', path, body),
   postForm: (path, formData) => requestForm('POST', path, formData),
   patch: (path, body) => request('PATCH', path, body),

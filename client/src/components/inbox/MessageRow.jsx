@@ -6,6 +6,9 @@ import Badge from '../shared/Badge.jsx';
 import { cn, timeAgo, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
 
 export default function MessageRow({ message, selected, onClick, onSnooze, onDone, onFastDone, onSchedule, onReopen, onArchive, onBlock, onMarkSpam, onPin, onUnpin, onForward, onAsanaAction, isPinned, showWakeUp, showDoneInfo, selectable, isSelected, onToggleSelect }) {
+  // Defensief: een rij zonder message-data nooit renderen (voorkomt crash op undefined
+  // property-access als een lijst een stale/verwijderd item bevat).
+  if (!message) return null;
   const m = message;
   const isEmail = m.channel_type === 'email';
   const isTodo = m.channel_type === 'todo';

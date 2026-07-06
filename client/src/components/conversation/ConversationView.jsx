@@ -88,10 +88,33 @@ export default function ConversationView({
     );
   }
 
-  if (isLoading || !m) {
+  if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoadingSpinner label="Bericht laden…" />
+      </div>
+    );
+  }
+
+  // Klaar met laden maar geen bericht (404 → api.get gaf null): het bericht bestaat
+  // niet meer (verwijderd/gearchiveerd). Toon een nette lege staat i.p.v. door te
+  // renderen op `m` = null (crash) of eeuwig te blijven spinnen.
+  if (!m) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="p-8 text-center">
+          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+            <i className="fa-solid fa-envelope-open-text text-2xl text-gray-400" />
+          </div>
+          <p className="font-medium text-gray-700">Dit bericht bestaat niet meer</p>
+          <p className="mt-1 text-sm text-gray-500">Het is waarschijnlijk verwijderd of gearchiveerd.</p>
+          <button
+            onClick={onBack}
+            className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700"
+          >
+            Terug naar inbox
+          </button>
+        </div>
       </div>
     );
   }
