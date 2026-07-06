@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 const PERM_KEY = 'kyano:notifPermission';
@@ -19,9 +19,18 @@ function notifyDesktop({ title, body, icon, url, tag }) {
   } catch { /* no-op */ }
 }
 
+// SSE-reconnect regels: minstens RECONNECT_FLOOR_MS tussen pogingen (voorkomt reconnect-storms
+// die de browser-connectiepool leegtrekken en Chrome laten bevriezen). Faalt de stream
+// MAX_FAILURES keer binnen FAILURE_WINDOW_MS → stoppen en een offline-banner tonen i.p.v.
+// eindeloos blijven proberen.
+const RECONNECT_FLOOR_MS = 10000;
+const MAX_FAILURES = 3;
+const FAILURE_WINDOW_MS = 60000;
+
 export function useNotifications({ enabled = true } = {}) {
   const qc = useQueryClient();
   const sseRef = useRef(null);
+  const [offline, setOffline] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -39,8 +48,32 @@ export function useNotifications({ enabled = true } = {}) {
 
     let es = null;
     let reconnectTimer = null;
-    let backoffMs = 3000; // start 3s, exponentieel tot max 60s
     let stopped = false;
+    let lastReconnectAt = 0;
+    let failureTimes = []; // timestamps van recente fouten — voor 3-strikes-detectie
+    setOffline(false);
+
+    // Reconnect met een harde ondergrens: nooit vaker dan 1× per RECONNECT_FLOOR_MS.
+    function scheduleReconnect() {
+      if (stopped || reconnectTimer) return;
+
+      // 3-strikes: te vaak gefaald binnen het venster → opgeven en banner tonen.
+      const now = Date.now();
+      failureTimes = failureTimes.filter((t) => now - t < FAILURE_WINDOW_MS);
+      failureTimes.push(now);
+      if (failureTimes.length >= MAX_FAILURES) {
+        stopped = true;
+        setOffline(true);
+        return;
+      }
+
+      const delay = Math.max(RECONNECT_FLOOR_MS - (now - lastReconnectAt), 1000);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        lastReconnectAt = Date.now();
+        connect();
+      }, delay);
+    }
 
     function handleNewMessages(e) {
       try {
@@ -69,18 +102,13 @@ export function useNotifications({ enabled = true } = {}) {
 
       es.addEventListener('new-messages', handleNewMessages);
 
-      es.onopen = () => { backoffMs = 3000; }; // gelukte verbinding → backoff resetten
+      es.onopen = () => { failureTimes = []; }; // gelukte verbinding → strikes resetten
 
       es.onerror = () => {
-        // Sluit de kapotte verbinding EXPLICIET en reconnect met backoff. De ingebouwde
+        // Sluit de kapotte verbinding EXPLICIET en reconnect via de throttle. De ingebouwde
         // auto-reconnect van EventSource kan bij bepaalde proxy's oude sockets laten hangen.
         try { es.close(); } catch { /* al dicht */ }
-        if (stopped || reconnectTimer) return;
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          connect();
-        }, backoffMs);
-        backoffMs = Math.min(backoffMs * 2, 60000);
+        scheduleReconnect();
       };
     }
 
@@ -92,8 +120,11 @@ export function useNotifications({ enabled = true } = {}) {
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         if (es) { try { es.close(); } catch { /* al dicht */ } es = null; }
       } else if (stopped) {
+        // Tab weer zichtbaar → verse start: strikes wissen, banner weg, opnieuw verbinden.
         stopped = false;
-        backoffMs = 3000;
+        failureTimes = [];
+        setOffline(false);
+        lastReconnectAt = Date.now();
         connect();
       }
     }
@@ -109,4 +140,6 @@ export function useNotifications({ enabled = true } = {}) {
       sseRef.current = null;
     };
   }, [enabled, qc]);
+
+  return { offline };
 }

@@ -458,7 +458,7 @@ export default function App() {
     && (authStatus.accounts || []).every((a) => !a.is_connected);
 
   // SSE notifications
-  useNotifications({ enabled: !noAccountsConnected });
+  const { offline: realtimeOffline } = useNotifications({ enabled: !noAccountsConnected });
 
 
   // Keyboard shortcuts
@@ -671,6 +671,20 @@ export default function App() {
       />
 
       <main className="flex flex-1 flex-col overflow-hidden">
+        {realtimeOffline ? (
+          <div className="flex items-center justify-center gap-2 bg-amber-100 px-4 py-2 text-sm text-amber-800">
+            <i className="fa-solid fa-triangle-exclamation" />
+            <span>Real-time updates offline — ververs de pagina om opnieuw te verbinden.</span>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="ml-2 rounded bg-amber-800 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-900"
+            >
+              Verversen
+            </button>
+          </div>
+        ) : null}
+
         {!selectedMessageId ? (
           <header className="flex items-center justify-between border-b border-gray-200 bg-white px-8 py-3">
             <div className="text-sm font-medium text-gray-500">{headerTitle}</div>
