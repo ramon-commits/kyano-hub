@@ -13,6 +13,29 @@ import { completeAsanaTasksForMessages, completeLinkedAsanaForMessage } from '..
 
 const router = Router();
 
+// ===== Send-deduplicatie =====
+// Beschermt tegen dubbele sends (dubbele klik, netwerk-retry, dubbele request-handler):
+// als exact hetzelfde bericht binnen DEDUP_WINDOW_MS opnieuw naar dezelfde bestemming
+// wordt gestuurd, weigeren we de tweede. De frontend heeft óók een guard, maar dit is
+// de bron-van-waarheid: een retry ná een trage-maar-geslaagde send komt hier niet langs.
+const DEDUP_WINDOW_MS = 5000;
+const recentSends = new Map(); // key: bestemming+tekst → timestamp (ms)
+
+// Geeft true terug als dit een dubbele send is (binnen het venster). Registreert
+// tegelijk de send en ruimt oude entries op.
+function isDuplicateSend(key) {
+  const now = Date.now();
+  const lastSent = recentSends.get(key);
+  if (lastSent && (now - lastSent) < DEDUP_WINDOW_MS) return true;
+  recentSends.set(key, now);
+  // Cleanup: verwijder entries ouder dan 60s zodat de Map niet ongelimiteerd groeit.
+  const cutoff = now - 60000;
+  for (const [k, ts] of recentSends.entries()) {
+    if (ts < cutoff) recentSends.delete(k);
+  }
+  return false;
+}
+
 const mediaUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 5 },
@@ -845,6 +868,16 @@ router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
 
     if (!plainBody && !htmlBody && attachments.length === 0) return res.status(400).json({ error: 'body is required' });
 
+    // Dedup: weiger identieke reply naar dezelfde thread binnen het venster.
+    // Alleen bij tekst-only replies — bij bijlagen kan een herhaling legitiem zijn.
+    if (attachments.length === 0) {
+      const dedupKey = `reply:${req.params.id}:${plainBody.slice(0, 100)}`;
+      if (isDuplicateSend(dedupKey)) {
+        console.warn(`[DEDUP] Weiger dubbele reply: ${dedupKey}`);
+        return res.json({ ok: true, deduplicated: true, original_id: req.params.id });
+      }
+    }
+
     if (original.channel_type !== 'email') {
       // Unipile-pad: WhatsApp / Instagram / LinkedIn
       if (!unipile.isConfigured()) {
@@ -1546,6 +1579,13 @@ router.post('/compose-chat', async (req, res) => {
   try {
     const { channel_id, contact_id, phone, recipient_name, text } = req.body || {};
     if (!channel_id || !text) return res.status(400).json({ error: 'channel_id en text zijn verplicht' });
+
+    // Dedup: weiger identiek nieuw bericht naar dezelfde bestemming binnen het venster.
+    const dedupKey = `compose-chat:${channel_id}:${contact_id || phone || ''}:${String(text).slice(0, 100)}`;
+    if (isDuplicateSend(dedupKey)) {
+      console.warn(`[DEDUP] Weiger dubbele compose-chat: ${dedupKey}`);
+      return res.json({ ok: true, deduplicated: true });
+    }
 
     const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(channel_id);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });

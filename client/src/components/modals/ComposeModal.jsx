@@ -44,6 +44,9 @@ export default function ComposeModal({
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
+  // Synchrone guard: blokkeert een tweede submit binnen dezelfde tick, vóór `sending`
+  // (async state) true is. Zelfde patroon als ReplyComposer.
+  const sendingRef = useRef(false);
   const [aiLoading, setAiLoading] = useState(null);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const textareaRef = useRef(null);
@@ -218,7 +221,9 @@ export default function ComposeModal({
     if (isEmail && !to.trim()) { toast.warning('Vul een ontvanger in'); return; }
     if (isEmail && !subject.trim()) { toast.warning('Vul een onderwerp in'); return; }
     if (isChat && !contact?.id && !to.trim()) { toast.warning('Vul een nummer of contact in'); return; }
+    if (sending || sendingRef.current) return;
 
+    sendingRef.current = true;
     setSending(true);
     try {
       if (isEmail) {
@@ -259,6 +264,7 @@ export default function ComposeModal({
     } catch (e) {
       toast.error(e.message || 'Versturen mislukt');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
