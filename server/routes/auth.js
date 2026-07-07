@@ -4,10 +4,20 @@ import { getAuthUrl, handleCallback, isConnected, disconnect } from '../services
 
 const router = Router();
 
+// Bepaal waar de gebruiker na OAuth naartoe moet. In productie serveert de server
+// zélf de gebouwde client op dezelfde host/poort (bv. :3001), dus de request-host is
+// correct. Voor een losse dev-setup (Vite op :5173) kun je CLIENT_URL overriden.
+// (Referer werkt niet als signaal: op de OAuth-callback komt die van Google.)
+function clientUrlFor(req) {
+  if (process.env.CLIENT_URL) return process.env.CLIENT_URL.replace(/\/+$/, '');
+  const host = req.get('host') || `localhost:${process.env.PORT || 3001}`;
+  return `${req.protocol || 'http'}://${host}`;
+}
+
 // HTML pages
-function renderPage({ title, headline, color, body, redirect = true }) {
+function renderPage({ title, headline, color, body, redirect = true, clientUrl = 'http://localhost:3001' }) {
   const redirectScript = redirect
-    ? `<script>setTimeout(()=>{window.location.href='http://localhost:5173'},5000)</script>`
+    ? `<script>setTimeout(()=>{window.location.href=${JSON.stringify(clientUrl)}},5000)</script>`
     : '';
   return `<!DOCTYPE html>
 <html lang="nl"><head><meta charset="UTF-8"><title>${title}</title>
@@ -43,6 +53,7 @@ router.get('/gmail/connect/:channelId', (req, res) => {
     headline: 'Kanaal niet gevonden',
     color: '#dc2626',
     body: `<p>Geen email-kanaal met id <code>${req.params.channelId}</code>.</p>`,
+    clientUrl: clientUrlFor(req),
   }));
   const url = getAuthUrl(req.params.channelId);
   // Accept-header: API clients (Accept: application/json) krijgen JSON, browsers krijgen redirect
@@ -97,6 +108,7 @@ export const callbackRouter = Router();
 
 callbackRouter.get('/gmail/callback', async (req, res) => {
   const { code, state, error } = req.query;
+  const clientUrl = clientUrlFor(req);
 
   if (error) {
     const messages = {
@@ -108,7 +120,8 @@ callbackRouter.get('/gmail/callback', async (req, res) => {
       title: 'OAuth fout',
       headline: m.headline,
       color: '#dc2626',
-      body: `<p>${m.body}</p><a class="btn" href="http://localhost:5173">Terug naar dashboard</a>`,
+      body: `<p>${m.body}</p><a class="btn" href="${clientUrl}">Terug naar dashboard</a>`,
+      clientUrl,
     }));
   }
 
@@ -118,7 +131,8 @@ callbackRouter.get('/gmail/callback', async (req, res) => {
       headline: '❌ Onvolledige callback',
       color: '#dc2626',
       body: `<p>Geen <code>code</code> of <code>state</code> ontvangen van Google. Probeer opnieuw te verbinden.</p>
-             <a class="btn" href="http://localhost:5173">Terug naar dashboard</a>`,
+             <a class="btn" href="${clientUrl}">Terug naar dashboard</a>`,
+      clientUrl,
     }));
   }
 
@@ -130,7 +144,8 @@ callbackRouter.get('/gmail/callback', async (req, res) => {
       color: '#16a34a',
       body: `<p><strong>${result.email}</strong> is gekoppeld aan kanaal <code>${result.channelId}</code>.</p>
              <p>Initiële sync gestart — binnen een minuut staan je laatste 100 berichten in de inbox.</p>
-             <a class="btn" href="http://localhost:5173">→ Naar dashboard</a>`,
+             <a class="btn" href="${clientUrl}">→ Naar dashboard</a>`,
+      clientUrl,
     }));
   } catch (e) {
     console.error('OAuth callback error:', e);
@@ -151,8 +166,9 @@ callbackRouter.get('/gmail/callback', async (req, res) => {
       headline,
       color: '#dc2626',
       body: `${body}
-             <a class="btn" href="http://localhost:3001/api/auth/gmail/connect/${state}">Probeer opnieuw</a>
-             <a class="btn secondary" href="http://localhost:5173">Naar dashboard</a>`,
+             <a class="btn" href="${req.protocol || 'http'}://${req.get('host')}/api/auth/gmail/connect/${state}">Probeer opnieuw</a>
+             <a class="btn secondary" href="${clientUrl}">Naar dashboard</a>`,
+      clientUrl,
     }));
   }
 });
