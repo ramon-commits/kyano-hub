@@ -238,10 +238,46 @@ export async function sendMessageWithAttachments(chatId, text, files) {
 }
 
 // ===== Start nieuwe chat =====
+// Let op: POST /api/v1/chats verwacht multipart/form-data (net als de media-send
+// hieronder), NIET application/json — een JSON-body geeft een 422. Er bestaat géén
+// `type`-veld op dit endpoint; de velden zijn account_id, attendees_ids, text,
+// (optioneel) subject/attachments/linkedin. Zie developer.unipile.com.
 export async function startNewChat(accountId, attendeeId, text) {
-  return await callUnipile('POST', '/api/v1/chats', {
-    body: { account_id: accountId, text, attendees_ids: [attendeeId] },
-  });
+  const { apiKey, dsn } = getUnipileCreds();
+  if (!apiKey || !dsn) throw new Error('Unipile niet geconfigureerd');
+
+  const url = new URL(baseUrl() + '/api/v1/chats');
+  const form = new FormData();
+  form.append('account_id', accountId);
+  form.append('attendees_ids', attendeeId); // 1 attendee → 1 veld (herhaal veld voor meer)
+  if (text) form.append('text', text);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UNIPILE_TIMEOUT_MS);
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      // GEEN Content-Type zetten — FormData bepaalt zelf de multipart-boundary.
+      headers: { 'X-API-KEY': apiKey, 'Accept': 'application/json' },
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`Unipile timeout (${UNIPILE_TIMEOUT_MS / 1000}s) — probeer opnieuw`);
+    throw new Error(`Kan Unipile niet bereiken: ${e.message}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const txt = await resp.text();
+  let data = null;
+  try { data = txt ? JSON.parse(txt) : null; } catch { data = { raw: txt }; }
+  if (!resp.ok) {
+    if (resp.status === 401) throw new Error('Unipile API key ongeldig of verlopen');
+    throw new Error(`Unipile API error (${resp.status}): ${data?.message || data?.detail || txt.slice(0, 200)}`);
+  }
+  return data;
 }
 
 // ===== Download attachment binary (WhatsApp/LinkedIn/Instagram media) =====
