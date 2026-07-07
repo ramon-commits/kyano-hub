@@ -237,19 +237,36 @@ export async function sendMessageWithAttachments(chatId, text, files) {
   return data;
 }
 
+// Zet een telefoonnummer om naar een WhatsApp JID. Unipile vereist voor het starten
+// van een WhatsApp-chat het attendee-provider-id in JID-vorm: "31612345678@s.whatsapp.net"
+// (landcode + nummer, alléén cijfers, zonder +). Een rauw nummer geeft een 422.
+// Al-JID's / andere provider-ids (LinkedIn ACo…, Instagram) laten we ongemoeid.
+function toWhatsAppJid(identifier) {
+  const s = String(identifier || '');
+  if (s.includes('@')) return s; // al een JID of provider-id
+  let digits = s.replace(/[^0-9]/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2); // internationale 00-prefix → landcode
+  return digits ? `${digits}@s.whatsapp.net` : s;
+}
+
 // ===== Start nieuwe chat =====
 // Let op: POST /api/v1/chats verwacht multipart/form-data (net als de media-send
 // hieronder), NIET application/json — een JSON-body geeft een 422. Er bestaat géén
-// `type`-veld op dit endpoint; de velden zijn account_id, attendees_ids, text,
-// (optioneel) subject/attachments/linkedin. Zie developer.unipile.com.
-export async function startNewChat(accountId, attendeeId, text) {
+// `type`/`chat_type`-veld op dit endpoint; de velden zijn account_id, attendees_ids,
+// text, (optioneel) subject/attachments/linkedin. Zie developer.unipile.com.
+// channelType bepaalt het attendee-id-formaat (WhatsApp → JID).
+export async function startNewChat(accountId, attendeeId, text, { channelType } = {}) {
   const { apiKey, dsn } = getUnipileCreds();
   if (!apiKey || !dsn) throw new Error('Unipile niet geconfigureerd');
+
+  const type = (channelType || '').toLowerCase();
+  const attendee = type === 'whatsapp' ? toWhatsAppJid(attendeeId) : attendeeId;
+  console.log(`[UNIPILE] startNewChat account=${accountId} channelType=${channelType || '?'} attendee=${attendee}`);
 
   const url = new URL(baseUrl() + '/api/v1/chats');
   const form = new FormData();
   form.append('account_id', accountId);
-  form.append('attendees_ids', attendeeId); // 1 attendee → 1 veld (herhaal veld voor meer)
+  form.append('attendees_ids', attendee); // 1 attendee → 1 veld (herhaal veld voor meer)
   if (text) form.append('text', text);
 
   const controller = new AbortController();

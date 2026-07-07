@@ -899,7 +899,7 @@ router.post('/:id/reply', upload.array('files', 10), async (req, res, next) => {
           return res.status(400).json({ error: 'Geen bestaande chat en geen telefoonnummer om een nieuw gesprek te starten', deep_link: original.deep_link });
         }
         try {
-          const started = await unipile.startNewChat(unipileAccountId, phone, plainBody);
+          const started = await unipile.startNewChat(unipileAccountId, phone, plainBody, { channelType: original.channel_type });
           const newThreadId = started?.chat_id || started?.id || null;
           const localId = uuid();
           db.prepare(`
@@ -1645,7 +1645,7 @@ router.post('/compose-chat', async (req, res) => {
 
     try {
       console.log(`[COMPOSE-CHAT] startNewChat account=${unipileAccountId} attendee=${attendeeIdentifier} text=${text.slice(0, 30)}`);
-      const result = await unipile.startNewChat(unipileAccountId, attendeeIdentifier, text);
+      const result = await unipile.startNewChat(unipileAccountId, attendeeIdentifier, text, { channelType: channel.type });
       const newThreadId = result?.chat_id || result?.id || null;
 
       const msgId = uuid();
