@@ -1,9 +1,11 @@
 import { google } from 'googleapis';
 import { getClient } from './gmail-oauth.js';
+import { getConfig } from './app-config.js';
 
 // Best-effort: markeer een Gmail message als gelezen (verwijder UNREAD label)
 // Faalt stil als kanaal niet verbonden, external_id ontbreekt, of Gmail call faalt
 export async function markAsReadInGmail(channelId, externalId) {
+  if (getConfig('disable_mark_read_sync') === '1') return { ok: false, disabled: true };
   if (!channelId || !externalId) return { ok: false, reason: 'missing_ids' };
   try {
     const client = getClient(channelId);
