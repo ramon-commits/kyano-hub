@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../hooks/useToast.jsx';
+import { api } from '../../lib/api.js';
 
 export default function BirthdayImportSettings() {
   const [busy, setBusy] = useState(false);
@@ -15,14 +16,9 @@ export default function BirthdayImportSettings() {
     setResult(null);
     try {
       const text = await file.text();
-      const res = await fetch('/api/contacts/import-birthdays', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: text,
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Import mislukt');
+      const data = await api.postRaw('/contacts/import-birthdays', text, 'text/plain');
+      if (!data?.ok) {
+        throw new Error(data?.error || 'Import mislukt');
       }
       setResult(data);
       toast.success(

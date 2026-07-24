@@ -5,6 +5,17 @@
 const MAX_CONCURRENT = 5;
 let activeRequests = 0;
 const queue = [];
+let lastRelease = Date.now();
+
+// Één plek waar een slot vrijkomt. ALTIJD via finally aangeroepen (ook bij timeout/error),
+// zodat een gefaalde request nooit een slot vasthoudt. Math.max voorkomt dat de teller
+// negatief wordt als de watchdog al geforceerd heeft gereset terwijl de echte fetch later
+// alsnog afrondt.
+function release() {
+  activeRequests = Math.max(0, activeRequests - 1);
+  lastRelease = Date.now();
+  processQueue();
+}
 
 function processQueue() {
   while (activeRequests < MAX_CONCURRENT && queue.length > 0) {
@@ -12,10 +23,7 @@ function processQueue() {
     activeRequests++;
     fetch(url, opts)
       .then(resolve, reject)
-      .finally(() => {
-        activeRequests--;
-        processQueue();
-      });
+      .finally(release);
   }
 }
 
@@ -24,6 +32,32 @@ function throttledFetch(url, opts) {
     queue.push({ url, opts, resolve, reject });
     processQueue();
   });
+}
+
+// Watchdog: als alle slots bezet zijn én er 60s lang geen enkel slot is vrijgekomen,
+// zit de queue vast (bijv. door fetches die om een of andere reden noch aborten noch
+// afronden). Dan forceren we een reset zodat wachtende requests weer door kunnen —
+// self-healing, zodat één vastgelopen call de hele UI niet permanent bevriest.
+setInterval(() => {
+  if (activeRequests >= MAX_CONCURRENT && Date.now() - lastRelease > 60_000) {
+    console.error(
+      `[API] Queue-deadlock gedetecteerd (${activeRequests} inflight, ${queue.length} wachtend, ` +
+      `${Math.round((Date.now() - lastRelease) / 1000)}s geen release) — force reset`,
+    );
+    activeRequests = 0;
+    lastRelease = Date.now();
+    processQueue();
+  }
+}, 30_000);
+
+// Live status van de throttle-queue — uitgelezen door diagnostics.js.
+export function queueStatus() {
+  return {
+    inflight: activeRequests,
+    waiting: queue.length,
+    max: MAX_CONCURRENT,
+    lastRelease: new Date(lastRelease).toISOString(),
+  };
 }
 
 // Fetch met harde timeout — voorkomt dat een hangende server de UI eeuwig in
@@ -92,10 +126,32 @@ async function requestForm(method, path, formData) {
   return data;
 }
 
+// Verstuur een raw (niet-JSON) body met eigen Content-Type — bijv. een tekstbestand.
+// Loopt óók via de throttle + timeout zodat het geen browser-socket kan gijzelen.
+async function requestRaw(method, path, body, contentType, timeoutMs = 60000) {
+  const res = await fetchWithTimeout(
+    `/api${path}`,
+    { method, headers: { 'Content-Type': contentType }, body },
+    timeoutMs,
+  );
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+  if (!res.ok) {
+    const err = new Error(data?.error || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
 export const api = {
   get: (path) => request('GET', path, undefined, { nullOn404: true }),
   post: (path, body) => request('POST', path, body),
   postForm: (path, formData) => requestForm('POST', path, formData),
+  postRaw: (path, body, contentType) => requestRaw('POST', path, body, contentType),
   patch: (path, body) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
   health: () => fetch('/api/health').then((r) => r.json()),

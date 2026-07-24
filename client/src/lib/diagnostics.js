@@ -10,6 +10,8 @@
 // Alles landt in de console én in window.__diag zodat je bij een freeze `__diag.report()`
 // kunt draaien (werkt ook nog als de UI niet reageert — console leeft in een aparte thread).
 
+import { queueStatus } from './api.js';
+
 const MEM_INTERVAL_MS = 30_000;
 const MEM_WARN_MB = 500;
 const LONGTASK_WARN_MS = 200;
@@ -56,10 +58,12 @@ function startMemorySampler() {
     pushCapped(state.memSamples, { t: nowIso(), usedMB }, 240); // ~2u historie
     const limitMB = Math.round(performance.memory.jsHeapSizeLimit / 1048576);
     const uptimeMin = Math.round((Date.now() - state.startedAt) / 60000);
+    const q = queueStatus();
+    const queueStr = `queue ${q.inflight}/${q.max} (${q.waiting} wachtend)`;
     if (usedMB > MEM_WARN_MB) {
       console.warn(`[MEM] ${usedMB}MB gebruikt (${uptimeMin}min uptime, limiet ${limitMB}MB) — MOGELIJK MEMORY LEAK. Draai __diag.report() voor trend.`);
     } else {
-      console.log(`[MEM] ${usedMB}MB (${uptimeMin}min uptime) · ${state.liveEventSources} SSE live · ${state.longTasks.length} long tasks totaal`);
+      console.log(`[MEM] ${usedMB}MB (${uptimeMin}min uptime) · ${state.liveEventSources} SSE live · ${state.longTasks.length} long tasks totaal · ${queueStr}`);
     }
   };
   sample();
@@ -125,6 +129,7 @@ export function initDiagnostics() {
         memory: { firstMB: first, lastMB: last, peakMB: peak, growthMB: last - first, samples: mem.length },
         longTasks: { count: state.longTasks.length, worstMs: state.longTasks.reduce((m, t) => Math.max(m, t.durationMs), 0), recent: state.longTasks.slice(-10) },
         eventSources: { liveNow: state.liveEventSources, everCreated: state.totalEventSources },
+        queue: queueStatus(),
         errors: state.errors.slice(-10),
       };
       console.table(mem.slice(-20));
@@ -133,10 +138,12 @@ export function initDiagnostics() {
         '[DIAG] Interpretatie:\n' +
         `  · heap ${first}→${last}MB (piek ${peak}MB) over ${uptimeMin}min → ${last - first > 200 ? 'MEMORY LEAK waarschijnlijk' : 'stabiel'}\n` +
         `  · ${state.longTasks.length} long tasks (ergste ${report.longTasks.worstMs}ms) → ${report.longTasks.worstMs > 1000 ? 'main thread loopt vast (render-loop?)' : 'ok'}\n` +
-        `  · ${state.liveEventSources} SSE live → ${state.liveEventSources > 2 ? 'CONNECTION LEAK' : 'ok'}`,
+        `  · ${state.liveEventSources} SSE live → ${state.liveEventSources > 2 ? 'CONNECTION LEAK' : 'ok'}\n` +
+        `  · queue ${report.queue.inflight}/${report.queue.max} (${report.queue.waiting} wachtend, laatste release ${report.queue.lastRelease}) → ${report.queue.inflight >= report.queue.max && report.queue.waiting > 0 ? 'QUEUE VOL — mogelijk deadlock' : 'ok'}`,
       );
       return report;
     },
+    queueStatus,
     reset() { memTimer && clearInterval(memTimer); },
   };
 

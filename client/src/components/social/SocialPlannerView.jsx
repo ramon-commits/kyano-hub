@@ -5,6 +5,7 @@ import PageHeader from '../shared/PageHeader.jsx';
 import EmptyState from '../shared/EmptyState.jsx';
 import LoadingSpinner from '../shared/LoadingSpinner.jsx';
 import { cn, formatDateShort, formatTime, parseDateSafe } from '../../lib/utils.js';
+import { api } from '../../lib/api.js';
 
 const TABS = [
   { id: 'scheduled', label: 'Planner', icon: 'calendar-day' },
@@ -54,7 +55,7 @@ export default function SocialPlannerView() {
 
   async function handlePublish(post) {
     try {
-      await fetch(`/api/social/posts/${post.id}/publish`, { method: 'POST' });
+      await api.post(`/social/posts/${post.id}/publish`);
       toast.info('Auto-publicatie komt in v2 — gebruik nu de native app van het platform', 'Niet beschikbaar');
     } catch (e) {
       toast.error(e.message);
